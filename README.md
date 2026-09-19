@@ -1,4 +1,43 @@
-# Context Compiler (Phase 1)
+# Context Compiler
+
+## Phase 2 — Compile API (middleware beachhead)
+
+HTTP service that accepts a **task contract** plus org state (handle or inline entities) and returns **compiled context**, **include/exclude audit**, and **token budget usage**. Permissions hooks (allow/deny kinds or tags) run before ranking. Org state sits on a pluggable in-memory handle layer for v0 (`internal/memory`); Phase 1 bench arms are unchanged.
+
+### Run locally
+
+```bash
+go test ./...
+make api                    # listens on :8080
+# or: go run ./cmd/api -addr :8080
+```
+
+Built-in state handle: `day0` (Project X fixture).
+
+### Example request
+
+```bash
+curl -sS http://localhost:8080/v1/compile \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "task_contract": {
+      "question": "Why was Project X delayed, who made the decision, and what should the backend team do?"
+    },
+    "state": { "handle": "day0" },
+    "budget": { "token_budget": 2000 },
+    "permissions": {
+      "allow_kinds": ["project", "decision", "ticket", "user", "conversation", "task", "team"]
+    }
+  }' | jq .
+```
+
+Response fields: `compiled_context`, `contract`, `audit`, `selected_ids`, `excluded_ids`, `budget_usage` (`token_budget`, `tokens_used`).
+
+Health check: `GET /healthz`.
+
+---
+
+## Phase 1 — Experiment harness
 
 ## Experimental question
 
@@ -109,7 +148,12 @@ Compile is local Go (no LLM spend); latency overhead is the measurable proxy for
 ## Layout
 
 ```
+  cmd/api/              # Phase 2 HTTP entrypoint
   cmd/bench/
+  internal/api/
+  internal/compiler/    # task-contract compile + audit (shared with arm C)
+  internal/memory/    # pluggable org-state handles (v0 in-memory)
+  internal/permissions/
   internal/arms/        # A / B / C
   internal/eval/
   internal/embed/       # hash-bow-384

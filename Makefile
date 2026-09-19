@@ -1,4 +1,6 @@
-.PHONY: bench bench-small test tidy db-up db-down db-logs migrate
+.PHONY: bench bench-small test tidy db-up db-down db-logs migrate api
+
+API_ADDR ?= :8080
 
 DATABASE_URL ?= postgres://contextcompiler:contextcompiler@localhost:5432/contextcompiler?sslmode=disable
 TOKENS ?= 100000
@@ -12,6 +14,9 @@ bench-small:
 
 test:
 	go test ./...
+
+api:
+	go run ./cmd/api -addr $(API_ADDR)
 
 tidy:
 	go mod tidy
