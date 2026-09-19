@@ -1,0 +1,83 @@
+LLM client: openai:openai/gpt-oss-20b
+Fixture entities=5944 est_tokens=1000017 (chars/4) seed=42
+Vector store: postgres+pgvector
+Embedder: hash-bow-384 (dim=384)
+Indexed 5944 entities in 5.502s
+Running A/B/C with packing budget=2000
+
+=== Context Compiler Day-1 Bench ===
+Task: Why was Project X delayed, who made the relevant decision, and what action should the backend team take?
+Token budget: 2000 (estimator: chars/4)
+Entities: 5944 | Golden relevant: 8
+Started: 2026-09-19T21:15:20+04:00
+
+--- A:full-dump ---
+  stub: false
+  task_success: true
+  tokens: in=1601 out=304 total=1905
+  est_cost_usd: $0.003810
+  latency_ms: 590
+  compile_ms: 0
+  llm_ms: 589
+  compile_cost_usd: $0.000000
+  llm_cost_usd: $0.003810
+  overhead_pct_of_e2e_cost: 0.00%
+  overhead_pct_of_e2e_latency: 0.00%
+  relevant_state_recall: 1.000 (8/8 golden)
+  irrelevant_state_ratio: 0.704
+  selected: 27 ids: co-001,usr-sarah,usr-marcus,usr-priya,usr-alex,team-backend,team-frontend,proj-x,proj-y,dec-001,tkt-042,tkt-099,doc-roadmap,doc-handbook,conv-standup,conv-random,task-freeze,task-colors,evt-kickoff,evt-party,noise-event-00000,noise-task-00001,noise-ticket-00002,noise-project-00003,noise-user-00004,noise-conversation-00005,noise-conversation-00006
+  notes: full in-memory dump until budget
+  answer: - **Why delayed:** Scope creep from the API redesign pushed the ship date back by two sprints.  
+- **Decision maker:*...
+
+--- B:rag ---
+  stub: false
+  task_success: true
+  tokens: in=1535 out=150 total=1685
+  est_cost_usd: $0.003370
+  latency_ms: 641
+  compile_ms: 112
+  llm_ms: 528
+  compile_cost_usd: $0.000000
+  llm_cost_usd: $0.003370
+  overhead_pct_of_e2e_cost: 0.00%
+  overhead_pct_of_e2e_latency: 17.47%
+  relevant_state_recall: 0.250 (2/8 golden)
+  irrelevant_state_ratio: 0.867
+  selected: 15 ids: dec-001,conv-standup,team-frontend,noise-document-01065,noise-event-03380,noise-team-03047,noise-task-03931,noise-team-00983,noise-document-03806,noise-team-01004,noise-task-04168,noise-decision-02175,noise-user-04525,noise-document-01005,noise-task-00395
+  notes: vector RAG via hash-bow-384 + postgres+pgvector top-16 (hybrid vector+keyword; pack by density)
+  answer: Project X was delayed to accommodate scope creep from the API redesign.  
+The decision was made by Sarah Chen, VP...
+
+--- C:compiler ---
+  stub: false
+  task_success: true
+  tokens: in=706 out=176 total=882
+  est_cost_usd: $0.001764
+  latency_ms: 539
+  compile_ms: 35
+  llm_ms: 503
+  compile_cost_usd: $0.000000
+  llm_cost_usd: $0.001764
+  overhead_pct_of_e2e_cost: 0.00%
+  overhead_pct_of_e2e_latency: 6.49%
+  relevant_state_recall: 1.000 (8/8 golden)
+  irrelevant_state_ratio: 0.579
+  selected: 19 ids: proj-x,evt-kickoff,usr-marcus,conv-standup,usr-priya,dec-001,tkt-042,tkt-099,proj-y,team-frontend,usr-alex,usr-sarah,task-freeze,doc-handbook,doc-roadmap,task-colors,team-backend,conv-random,evt-party
+  notes: task-contract → kind/keyword/ref-graph rank → score/token budget-fit + audit
+  answer: Project X was delayed because scope creep from the API redesign pushed the ship date back two sprints.  
+The delay ...
+  audit: (JSON, 4441 bytes)
+
+=== Comparison Table ===
+ARM          SUCCESS  TOKENS  COST_USD   LAT_MS  REL_RECALL  IRR_RATIO  STUB
+A:full-dump  true     1905    $0.003810  590     1.000       0.704      false
+B:rag        true     1685    $0.003370  641     0.250       0.867      false
+C:compiler   true     882     $0.001764  539     1.000       0.579      false
+
+=== Overhead (compile vs e2e) ===
+ARM          COMPILE_MS  LLM_MS  COMPILE_$  LLM_$      OH_%_COST  OH_%_LAT
+A:full-dump  0           589     $0.000000  $0.003810  0.00%      0.00%
+B:rag        112         528     $0.000000  $0.003370  0.00%      17.47%
+C:compiler   35          503     $0.000000  $0.001764  0.00%      6.49%
+Note: compile_cost_usd is $0 for local select/pack (no LLM). OH_%_LAT = compile_ms/total_ms is the measurable proxy for the <~30% of e2e cost criterion when compile spend is free.

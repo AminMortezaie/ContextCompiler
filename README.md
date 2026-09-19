@@ -1,1 +1,120 @@
-# ContextCompiler
+# Context Compiler (Phase 1)
+
+## Experimental question
+
+Does **task-aware context compilation** beat naïve full-context and standard retrieval under a **fixed token budget** without dropping quality?
+
+Primary scored task (narrative):
+
+> Why was Project X delayed, who made the relevant decision, and what action should the backend team take?
+
+Org-state scale ladder (chars/4 estimator):
+
+| Rung | Target tokens | `-tokens` | `Scale(...)` |
+|------|---------------|-----------|--------------|
+| Day-1 | ~100K | `100000` | `Scale(fixture.TargetTokens100K, fixture.DefaultSeed)` |
+| Next | ~500K | `500000` | `Scale(fixture.TargetTokens500K, fixture.DefaultSeed)` |
+| Next | ~1M | `1000000` | `Scale(fixture.TargetTokens1M, fixture.DefaultSeed)` |
+| Next | ~5M | `5000000` | `Scale(fixture.TargetTokens5M, fixture.DefaultSeed)` |
+
+Run the same A/B/C bakeoff at each rung with a **fixed packing budget** (default **2000**):
+
+```bash
+go test ./...                              # no Docker / API keys
+make bench                                 # ~100K (default TOKENS=100000)
+make bench TOKENS=500000                   # ~500K
+make bench TOKENS=1000000                  # ~1M
+make bench TOKENS=5000000                  # ~5M
+go run ./cmd/bench -tokens 500000 -budget 2000 -mock   # explicit flags
+make bench-small                           # Day-0 tiny fixture (-small)
+```
+
+See `VISION.md`.
+
+## Stack
+
+Go + PostgreSQL + pgvector + one LLM API. **No** LangChain / LangGraph.
+
+## Quick start (mock LLM, optional Postgres)
+
+```bash
+make db-up          # optional: docker compose up -d
+make bench -mock    # or: go run ./cmd/bench -mock
+```
+
+### Flags
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `-budget` | 2000 | Packing budget into the LLM prompt (chars/4) |
+| `-tokens` | 100000 | Target org-state size |
+| `-seed` | 42 | Deterministic fixture seed |
+| `-small` | false | Use Day-0 tiny fixture |
+| `-topk` | 16 | RAG top-k for arm B |
+| `-mock` | false | Force mock LLM even if API key is set |
+
+### Real LLM
+
+Keys load from `.env` (and optionally `/home/box/.config/context-compiler/env`). Do **not** commit secrets.
+
+```bash
+# GROQ_API_KEY=...  OPENAI_BASE_URL=https://api.groq.com/openai/v1  OPENAI_MODEL=openai/gpt-oss-20b
+go run ./cmd/bench -tokens 500000 -budget 2000
+go run ./cmd/bench -mock -tokens 500000
+```
+
+Without a key, mock is used and a warning is printed.
+
+### Embeddings
+
+**hash-bow-384** (default): deterministic bag-of-words → FNV buckets → L2; offline-reproducible bakeoff path (dim 384).
+
+### Database
+
+`docker-compose.yml` runs `pgvector/pgvector:pg16`.
+
+- DSN: `postgres://contextcompiler:contextcompiler@localhost:5432/contextcompiler?sslmode=disable`
+- Override with `DATABASE_URL`
+- Schema: `migrations/001_init.sql` (applied on Postgres connect or via `make migrate`)
+- If Postgres is down, Arm B uses an **in-memory** vector store or keyword fallback. `go test ./...` stays green without Docker.
+
+## Three arms
+
+| Arm | Pipeline |
+|-----|----------|
+| **A: full-dump** | concatenate state until packing budget → LLM |
+| **B: rag** | embed → pgvector (or memory) top-k → pack → LLM |
+| **C: compiler** | task-contract → multi-signal rank → score/token budget-fit → assemble + **include/exclude audit** → LLM |
+
+## Eval harness
+
+Every run prints task success, token/cost estimates, latency, **compile_ms vs llm_ms**, **overhead_pct_of_e2e_latency**, recall, and irrelevant ratio. Indexing for Arm B runs once in the bench harness before arms and is not counted in per-arm `compile_ms`.
+
+Compile is local Go (no LLM spend); latency overhead is the measurable proxy for the “compile overhead” experiment criterion.
+
+## Pass / kill (experiment-level)
+
+**Scaffold pass:** docker compose, vector RAG when DB/memory available, fixture scales through ~5M, `go test ./...` green.
+
+**Kill (live bakeoff):** compiler never beats A and B on quality under the same budget across the ladder, or gains are noise.
+
+## Live bakeoff logs
+
+| Scale | Log |
+|-------|-----|
+| 100K | `testdata/live-groq-100k-bakeoff.txt` |
+| 500K | `testdata/live-groq-500k-bakeoff.txt` |
+| 1M | `testdata/live-groq-1m-bakeoff.txt` |
+
+## Layout
+
+```
+  cmd/bench/
+  internal/arms/        # A / B / C
+  internal/eval/
+  internal/embed/       # hash-bow-384
+  internal/fixture/     # Day0 + Scale(...)
+  internal/llm/
+  internal/store/
+  migrations/001_init.sql
+```

@@ -1,0 +1,21 @@
+# Postgres + pgvector for Context Compiler (Arm B RAG persistence).
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: contextcompiler
+      POSTGRES_PASSWORD: contextcompiler
+      POSTGRES_DB: contextcompiler
+    ports:
+      - "5432:5432"
+    volumes:
+      - cc_pgdata:/var/lib/postgresql/data
+      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contextcompiler"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cc_pgdata:
