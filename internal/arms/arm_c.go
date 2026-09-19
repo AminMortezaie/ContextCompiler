@@ -19,7 +19,7 @@ type TaskContract = compiler.TaskContract
 type AuditEntry = compiler.AuditEntry
 
 // ArmC is the context compiler:
-// task-contract → multi-signal select/rank → budget-fit (score/token) → assemble + include/exclude audit → LLM.
+// task-contract → multi-signal select/rank → budget-fit (score/token, same tokenBudget as A/B) → assemble + include/exclude audit → LLM.
 // Deliberately distinct from arm B (no vector search; contract + kind priors + ref-graph boost).
 type ArmC struct {
 	LLM llm.Client
