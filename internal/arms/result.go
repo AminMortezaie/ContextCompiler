@@ -1,4 +1,5 @@
-// Package arms implements the three experimental arms: A (full-dump), B (RAG), C (compiler).
+// Package arms implements the three experimental arms: A (full-corpus insertion-order pack),
+// B (RAG), C (compiler). All arms pack context to the same tokenBudget before LLM.
 package arms
 
 import (
@@ -41,6 +42,6 @@ type Arm interface {
 	Run(ctx context.Context, store *state.Store, task fixture.Task, tokenBudget int) (RunResult, error)
 }
 
-// DefaultTokenBudget is the packing budget for the LLM prompt (chars/4 estimator).
-// Org state may be ~100K–500K tokens; arms must select within this budget.
+// DefaultTokenBudget is the shared packing budget for the LLM prompt (chars/4 estimator).
+// The org-state corpus may be ~100K–5M tokens; every arm selects/packs within this budget only.
 const DefaultTokenBudget = 2000

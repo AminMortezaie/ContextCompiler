@@ -41,22 +41,35 @@ Health check: `GET /healthz`.
 
 ## Experimental question
 
-Does **task-aware context compilation** beat naïve full-context and standard retrieval under a **fixed token budget** without dropping quality?
+Does **task-aware context compilation** beat naïve **insertion-order packing from the full candidate org-state** (Arm A) and standard retrieval (Arm B) under the **same fixed LLM context budget** without dropping quality?
 
 Primary scored task (narrative):
 
 > Why was Project X delayed, who made the relevant decision, and what action should the backend team take?
 
-Org-state scale ladder (chars/4 estimator):
+Org-state **corpus** scale ladder (chars/4 estimator). This is how large the synthetic org-state **candidate pool** is in memory — **not** how many tokens the LLM receives:
 
-| Rung | Target tokens | `-tokens` | `Scale(...)` |
-|------|---------------|-----------|--------------|
+| Rung | Corpus (~tokens) | `-tokens` | `Scale(...)` |
+|------|------------------|-----------|--------------|
 | Day-1 | ~100K | `100000` | `Scale(fixture.TargetTokens100K, fixture.DefaultSeed)` |
 | Next | ~500K | `500000` | `Scale(fixture.TargetTokens500K, fixture.DefaultSeed)` |
 | Next | ~1M | `1000000` | `Scale(fixture.TargetTokens1M, fixture.DefaultSeed)` |
 | Next | ~5M | `5000000` | `Scale(fixture.TargetTokens5M, fixture.DefaultSeed)` |
 
-Run the same A/B/C bakeoff at each rung with a **fixed packing budget** (default **2000**):
+### Budget equivalence (A / B / C)
+
+Every arm receives the **same** `-budget` (default **2000** tokens, chars/4) for the packed context passed to the LLM. Arms differ in **how** they choose entities from the corpus; they do **not** differ in prompt packing budget.
+
+| | What scales with `-tokens` | What stays at `-budget` |
+|---|---------------------------|-------------------------|
+| Corpus | Entity count / noise dilution (100K → 5M) | — |
+| LLM context | — | Packed prompt size cap (~2K default) |
+
+- **Arm A** walks the **full candidate state** in fixture order and **packs until the budget** — it does **not** send the entire 1M/5M corpus to the model.
+- **Arm B** retrieves top-k, then packs to the same budget.
+- **Arm C** ranks by task contract, budget-fits by score density, same budget.
+
+Run the same A/B/C bakeoff at each corpus rung with that **shared packing budget**:
 
 ```bash
 go test ./...                              # no Docker / API keys
@@ -85,8 +98,8 @@ make bench -mock    # or: go run ./cmd/bench -mock
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `-budget` | 2000 | Packing budget into the LLM prompt (chars/4) |
-| `-tokens` | 100000 | Target org-state size |
+| `-budget` | 2000 | **Shared** packing budget for A/B/C into the LLM prompt (chars/4) |
+| `-tokens` | 100000 | Target **corpus** size (candidate org-state in memory; not LLM input size) |
 | `-seed` | 42 | Deterministic fixture seed |
 | `-small` | false | Use Day-0 tiny fixture |
 | `-topk` | 16 | RAG top-k for arm B |
@@ -119,11 +132,13 @@ Without a key, mock is used and a warning is printed.
 
 ## Three arms
 
+All three call the LLM with a context pack capped at `-budget` (default 2000 tokens).
+
 | Arm | Pipeline |
 |-----|----------|
-| **A: full-dump** | concatenate state until packing budget → LLM |
-| **B: rag** | embed → pgvector (or memory) top-k → pack → LLM |
-| **C: compiler** | task-contract → multi-signal rank → score/token budget-fit → assemble + **include/exclude audit** → LLM |
+| **A: full-dump** | **Full corpus as candidates** → concatenate entities in store order **until the same packing budget** → LLM (naïve baseline; most of a 1M/5M corpus is never packed) |
+| **B: rag** | embed query → pgvector (or memory) top-k → **pack to the same budget** → LLM |
+| **C: compiler** | task-contract → multi-signal rank → score/token **budget-fit** → assemble + **include/exclude audit** → LLM |
 
 ## Eval harness
 

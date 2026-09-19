@@ -88,7 +88,7 @@ func main() {
 		Out:         os.Stdout,
 	}
 
-	fmt.Fprintf(os.Stderr, "Running A/B/C with packing budget=%d\n\n", *budget)
+	fmt.Fprintf(os.Stderr, "Running A/B/C: corpus est_tokens=%d, shared LLM packing budget=%d (A/B/C equivalent)\n\n", est, *budget)
 	if _, err := h.RunAll(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "bench failed: %v\n", err)
 		os.Exit(1)

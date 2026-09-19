@@ -1,7 +1,7 @@
 # Context Compiler — vision / experiment brief
 
 ## Core question
-Does task-aware context compilation measurably outperform naïve full-context and standard retrieval approaches under a fixed context/token budget?
+Does task-aware context compilation measurably outperform naïve insertion-order packing from the full candidate org-state (Arm A) and standard retrieval (Arm B) under the same fixed LLM packing budget?
 
 This is a systems + evaluation problem, not an ML research project.
 
@@ -9,9 +9,12 @@ This is a systems + evaluation problem, not an ML research project.
 Go + PostgreSQL + pgvector + one LLM API. No LangChain/LangGraph/agent frameworks.
 
 ## Three systems under test
-1. Full Context — dump as much organizational state as fits / allowed into the prompt
-2. RAG — embed query → vector search → top-k → prompt → LLM
-3. Context Compiler — task analysis → state selection → rank → fit token budget → assemble context → LLM
+
+All three use the **same fixed LLM context packing budget** (bench default 2000 tokens). The scale ladder (100K–5M) grows the **candidate org-state corpus**, not the prompt size.
+
+1. **Full-state baseline (Arm A)** — treat the entire in-memory org-state as candidates; pack entities in insertion order until the shared budget (not “send the whole 1M/5M corpus to the model”).
+2. **RAG (Arm B)** — embed query → vector search → top-k → pack to the same budget → LLM
+3. **Context Compiler (Arm C)** — task analysis → state selection → rank → fit the same token budget → assemble context → LLM
 
 ## Compiler pipeline (v0, deliberately simple)
 Task → Identify required entities → Retrieve candidate state → Rank state → Fit into token budget → Construct context → LLM → Result
@@ -19,7 +22,7 @@ Task → Identify required entities → Retrieve candidate state → Rank state 
 ## Org state to generate (synthetic)
 Company → Users, Projects, Teams, Documents, Conversations, Tickets, Decisions, Tasks, Events
 
-Scale ladder (token budgets of state): 100K, 500K, 1M, 5M, 10M, 50M
+Scale ladder (synthetic **corpus** size, chars/4): 100K, 500K, 1M, 5M, … — independent of the **packing budget** sent to the LLM (~2K in bench).
 
 ## Example task
 "Why was Project X delayed, who made the relevant decision, and what action should the backend team take?"
@@ -47,7 +50,7 @@ Building a sophisticated compiler before establishing a clean experimental quest
 
 Local tree at `/workspace/context-compiler`.
 
-- Arm A (full-dump): implemented
+- Arm A (full-dump): full corpus candidates, insertion-order pack to shared budget — implemented
 - Arm B (RAG): hash-bow-384 embeddings + pgvector (memory fallback)
 - Arm C (compiler): task-contract + multi-signal rank + density budget-fit + include/exclude audit
 - Fixture: deterministic Scale(TargetTokens100K, seed) (~100K tokens, chars/4)
