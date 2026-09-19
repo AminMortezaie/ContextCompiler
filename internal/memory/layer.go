@@ -12,7 +12,6 @@ import (
 // Layer is a pluggable org-state backend (Zep-like handle in v0; inline entities bypass it).
 type Layer interface {
 	Load(ctx context.Context, handle string) ([]state.Entity, error)
-	Register(handle string, entities []state.Entity) error
 }
 
 // InMemory implements Layer with named handles.

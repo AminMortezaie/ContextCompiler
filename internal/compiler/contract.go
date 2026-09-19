@@ -18,6 +18,10 @@ type AuditEntry struct {
 	Score  float64 `json:"score,omitempty"`
 }
 
+var defaultKinds = []string{
+	"project", "decision", "ticket", "user", "conversation", "task", "team",
+}
+
 // BuildContractFromQuestion heuristically derives a contract from natural-language task text.
 // Callers may pass a fully specified TaskContract instead.
 func BuildContractFromQuestion(question string) TaskContract {
@@ -35,11 +39,10 @@ func BuildContractFromQuestion(question string) TaskContract {
 	if strings.Contains(q, "project x") {
 		projects = append(projects, "project x", "proj-x")
 	}
-	kinds := []string{"project", "decision", "ticket", "user", "conversation", "task", "team"}
 	return TaskContract{
 		Question:      question,
 		ProjectHints:  projects,
-		RequiredKinds: kinds,
+		RequiredKinds: append([]string(nil), defaultKinds...),
 		Keywords:      keywords,
 	}
 }
@@ -54,9 +57,7 @@ func (c TaskContract) Normalize() TaskContract {
 		return BuildContractFromQuestion(out.Question)
 	}
 	if len(out.RequiredKinds) == 0 {
-		out.RequiredKinds = []string{
-			"project", "decision", "ticket", "user", "conversation", "task", "team",
-		}
+		out.RequiredKinds = append([]string(nil), defaultKinds...)
 	}
 	return out
 }

@@ -12,12 +12,6 @@ import (
 	"github.com/aminmortezaie/contextcompiler/internal/state"
 )
 
-// TaskContract is the compiler's structured view of what the task needs.
-type TaskContract = compiler.TaskContract
-
-// AuditEntry records why an entity was included or excluded.
-type AuditEntry = compiler.AuditEntry
-
 // ArmC is the context compiler:
 // task-contract → multi-signal select/rank → budget-fit (score/token, same tokenBudget as A/B) → assemble + include/exclude audit → LLM.
 // Deliberately distinct from arm B (no vector search; contract + kind priors + ref-graph boost).
@@ -36,8 +30,8 @@ func (a *ArmC) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 	compiled := compiler.Compile(st.All(), contract, compiler.Options{TokenBudget: tokenBudget})
 
 	auditBytes, _ := json.Marshal(struct {
-		Contract TaskContract `json:"contract"`
-		Audit    []AuditEntry `json:"audit"`
+		Contract compiler.TaskContract `json:"contract"`
+		Audit    []compiler.AuditEntry   `json:"audit"`
 	}{Contract: compiled.Contract, Audit: compiled.Audit})
 	compileDur := time.Since(start)
 

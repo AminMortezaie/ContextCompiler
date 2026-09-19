@@ -24,8 +24,3 @@ type StateRef struct {
 type BudgetConfig struct {
 	TokenBudget int `json:"token_budget"`
 }
-
-// CompileResponse is returned from POST /v1/compile.
-type CompileResponse struct {
-	compiler.Result
-}

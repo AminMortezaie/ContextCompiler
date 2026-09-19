@@ -2,7 +2,7 @@
 
 ## Phase 2 — Compile API (middleware beachhead)
 
-HTTP service that accepts a **task contract** plus org state (handle or inline entities) and returns **compiled context**, **include/exclude audit**, and **token budget usage**. Permissions hooks (allow/deny kinds or tags) run before ranking. Org state sits on a pluggable in-memory handle layer for v0 (`internal/memory`); Phase 1 bench arms are unchanged.
+HTTP service that accepts a **task contract** plus org state (handle or inline entities) and returns **compiled context**, **include/exclude audit**, and **token budget usage**. Permissions hooks (allow/deny entity kinds) run before ranking. Org state sits on a pluggable in-memory handle layer for v0 (`internal/memory`); Phase 1 bench arms are unchanged.
 
 ### Run locally
 

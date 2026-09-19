@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aminmortezaie/contextcompiler/internal/compiler"
 	"github.com/aminmortezaie/contextcompiler/internal/embed"
 	"github.com/aminmortezaie/contextcompiler/internal/fixture"
 	"github.com/aminmortezaie/contextcompiler/internal/llm"
@@ -75,8 +76,8 @@ func TestArmCEmitsAudit(t *testing.T) {
 		t.Fatal("expected audit JSON from arm C")
 	}
 	var parsed struct {
-		Contract TaskContract `json:"contract"`
-		Audit    []AuditEntry `json:"audit"`
+		Contract compiler.TaskContract `json:"contract"`
+		Audit    []compiler.AuditEntry   `json:"audit"`
 	}
 	if err := json.Unmarshal([]byte(res.AuditJSON), &parsed); err != nil {
 		t.Fatalf("audit JSON: %v", err)

@@ -34,10 +34,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleCompile(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var req CompileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -52,16 +48,12 @@ func (s *Server) handleCompile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "task_contract.question is required")
 		return
 	}
-	budget := req.Budget.TokenBudget
-	if budget <= 0 {
-		budget = 2000
-	}
 	result := compiler.Compile(entities, req.TaskContract, compiler.Options{
-		TokenBudget: budget,
+		TokenBudget: req.Budget.TokenBudget,
 		Permissions: req.Permissions,
 	})
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(CompileResponse{Result: result})
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *Server) resolveState(r *http.Request, ref StateRef) ([]state.Entity, error) {
