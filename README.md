@@ -166,7 +166,7 @@ make bench TOKENS=500000 MOCK=1            # ~500K
 make bench TOKENS=1000000 MOCK=1           # ~1M
 make bench TOKENS=5000000 MOCK=1           # ~5M
 go run ./cmd/bench -tokens 500000 -budget 2000 -mock   # explicit flags
-make bench-small                           # Day-0 tiny fixture (-small)
+make bench-small MOCK=1                    # Day-0 tiny fixture (-small)
 ```
 
 `make bench -mock` does **not** pass `-mock` into the binary (GNU make eats `-m` / `-o`). Use `MOCK=1` or `go run ./cmd/bench -mock`.

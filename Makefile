@@ -15,7 +15,7 @@ bench:
 	go run ./cmd/bench -tokens $(TOKENS) -budget $(BUDGET) $(MOCK_FLAG)
 
 bench-small:
-	go run ./cmd/bench -small
+	go run ./cmd/bench -small $(MOCK_FLAG)
 
 bench-multitask:
 	go run ./cmd/bench -suite -small -mock -budget $(BUDGET)
