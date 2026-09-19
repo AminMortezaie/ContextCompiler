@@ -10,12 +10,15 @@ type TaskContract struct {
 	Keywords      []string `json:"keywords,omitempty"`
 }
 
-// AuditEntry records why an entity was included or excluded.
+// AuditEntry records why an entity (or edge/snippet) was included or excluded.
 type AuditEntry struct {
-	ID     string  `json:"id"`
-	Action string  `json:"action"` // "include" | "exclude"
-	Reason string  `json:"reason"`
-	Score  float64 `json:"score,omitempty"`
+	ID        string  `json:"id"`
+	Action    string  `json:"action"` // "include" | "exclude"
+	Reason    string  `json:"reason"`
+	Score     float64 `json:"score,omitempty"`
+	Source    string  `json:"source,omitempty"` // lexical|vector|graph|expand|permission
+	EdgeID    string  `json:"edge_id,omitempty"`
+	EpisodeID string  `json:"episode_id,omitempty"`
 }
 
 var defaultKinds = []string{

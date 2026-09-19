@@ -69,6 +69,12 @@ func printRunDetail(w io.Writer, m Metrics, res arms.RunResult, goldenN int) {
 	fmt.Fprintf(w, "  context_recall: %.3f (%d/%d golden)\n", m.ContextRecall, m.RelevantHitCount, goldenN)
 	fmt.Fprintf(w, "  irrelevant_state_ratio: %.3f\n", m.IrrelevantStateRatio)
 	fmt.Fprintf(w, "  selected: %d ids: %s\n", m.SelectedCount, strings.Join(res.SelectedIDs, ","))
+	if m.PackedTokens > 0 {
+		fmt.Fprintf(w, "  packed_tokens: %d\n", m.PackedTokens)
+	}
+	if m.HasSufficiency {
+		fmt.Fprintf(w, "  sufficient: %v\n", m.Sufficient)
+	}
 	fmt.Fprintf(w, "  notes: %s\n", m.Notes)
 	fmt.Fprintf(w, "  answer: %s\n", m.AnswerPreview)
 	if res.AuditJSON != "" {

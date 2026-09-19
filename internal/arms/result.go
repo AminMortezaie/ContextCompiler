@@ -35,6 +35,11 @@ type RunResult struct {
 	// Stub flag (true only for degraded/fallback paths)
 	IsStub bool
 	Notes  string
+
+	// Phase C hooks (task success vs packed-token cost). Optional; A/B may leave zero.
+	PackedTokens   int
+	Sufficient     bool
+	HasSufficiency bool
 }
 
 // Arm is one experimental condition.

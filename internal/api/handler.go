@@ -48,12 +48,30 @@ func (s *Server) handleCompile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "task_contract.question is required")
 		return
 	}
-	result := compiler.Compile(entities, req.TaskContract, compiler.Options{
-		TokenBudget: req.Budget.TokenBudget,
-		Permissions: req.Permissions,
-	})
+	result := compiler.Compile(entities, req.TaskContract, compileOptions(s, req, entities))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func compileOptions(s *Server, req CompileRequest, entities []state.Entity) compiler.Options {
+	opts := compiler.Options{
+		TokenBudget: req.Budget.TokenBudget,
+		Permissions: req.Permissions,
+	}
+	if req.Retrieve != nil {
+		opts.TopK = req.Retrieve.TopK
+		opts.Hops = req.Retrieve.Hops
+	}
+	if len(req.State.Entities) > 0 {
+		opts.Graph = memory.DefaultGraph(entities)
+		opts.Handle = memory.InlineHandle
+		return opts
+	}
+	if gs, ok := memory.AsGraphStore(s.Memory); ok {
+		opts.Graph = gs
+		opts.Handle = req.State.Handle
+	}
+	return opts
 }
 
 func (s *Server) resolveState(r *http.Request, ref StateRef) ([]state.Entity, error) {

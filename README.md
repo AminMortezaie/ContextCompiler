@@ -33,10 +33,12 @@ curl -sS -o /tmp/compile.json -w "HTTP %{http_code}\n" http://localhost:8080/v1/
   }'
 # expect: HTTP 200
 # jq is optional:
-jq '{keys: keys, budget_usage, audit_len: (.audit|length), compiled_chars: (.compiled_context|length)}' /tmp/compile.json
+jq '{keys: keys, budget_usage, sufficient: .sufficiency.sufficient, edges: (.selected_edges|length), audit_len: (.audit|length), compiled_chars: (.compiled_context|length)}' /tmp/compile.json
 ```
 
-Success: **HTTP 200** with `compiled_context`, `audit`, and `budget_usage` (`token_budget`, `tokens_used`). Built-in state handle: `day0` (Project X fixture). Health check: `GET /healthz`.
+Success: **HTTP 200** with `compiled_context`, `audit`, `budget_usage` (`token_budget`, `tokens_used`), plus Phase B `sufficiency` and `selected_edges`. Built-in state handle: `day0` (Project X fixture + typed graph). Health check: `GET /healthz`.
+
+Graph expansion try-path (2-hop) and field notes: [`docs/phase-b-graph-compile.md`](docs/phase-b-graph-compile.md).
 
 Optional, still no keys:
 
@@ -53,7 +55,7 @@ make bench-multitask   # Phase 3 mock suite; Postgres warning + in-memory fallba
 - **Hash embeddings.** Default embedder is **hash-bow-384** (bag-of-words → FNV buckets → L2). Deterministic and offline-reproducible. It is **not** a neural embedding model.
 - **Synthetic fixtures.** Day-0 and the 100K→5M ladder are generated org-state, not production data.
 - **Relative $ cost estimator.** Bench `est_cost_usd` is `chars/4` tokens × a constant **$0.002 / 1K tokens**. Use it to compare arms in one run. It is **not** a vendor invoice or tokenizer-accurate cost.
-- **Heuristic compiler.** Arm C / `POST /v1/compile` is a deterministic rank + budget-fit pipeline (keyword/kind/ref-graph heuristics). It is **not** a trained model.
+- **Heuristic graph-aware compile.** Arm C / `POST /v1/compile` is a deterministic pipeline: lexical ∪ vector ∪ graph seeds → hop-limited typed expand → one ranker → budget pack (nodes + edges + snippets) → sufficiency checklist. It is **not** a trained model, **not** a memory product, and **not** a Zep/Graphiti clone.
 
 ---
 
@@ -88,9 +90,17 @@ curl -sS http://localhost:8080/v1/compile \
   }'
 ```
 
-Response fields: `compiled_context`, `contract`, `audit`, `selected_ids`, `excluded_ids`, `budget_usage` (`token_budget`, `tokens_used`).
+Response fields: `compiled_context`, `contract`, `audit`, `selected_ids`, `excluded_ids`, `budget_usage` (`token_budget`, `tokens_used`). Phase B adds `sufficiency` and `selected_edges` (additive). Audit rows may include `source`: `lexical` | `vector` | `graph` | `expand` | `permission`. Optional request: `retrieve.topk` / `retrieve.hops` (defaults 32 / 1).
+
+See [`docs/phase-b-graph-compile.md`](docs/phase-b-graph-compile.md). This is heuristic graph-aware compile over a pluggable `memory.GraphStore`, **not** an agent-memory product.
 
 Health check: `GET /healthz`.
+
+---
+
+## Phase B — Graph-aware compile
+
+Heuristic only. Typed `GraphStore` on `memory.Layer`, hybrid candidates, hop-limited expand, one ranker, pack nodes+edges+snippets, deterministic sufficiency. **No** `/v1/remember`, **no** LLM on compile, **no** better-than-Zep claims. How to try 1-hop / 2-hop: [`docs/phase-b-graph-compile.md`](docs/phase-b-graph-compile.md).
 
 ---
 
@@ -258,8 +268,9 @@ Compile is local Go (no LLM spend); latency overhead is the measurable proxy for
   cmd/api/              # Phase 2 HTTP entrypoint
   cmd/bench/            # Phase 1 bakeoff; -suite / -ablations for Phase 3
   internal/api/
-  internal/compiler/    # task-contract compile + audit (shared with arm C)
-  internal/memory/    # pluggable org-state handles (v0 in-memory)
+  internal/compiler/    # hybrid gather → expand → rank → pack + sufficiency
+  internal/memory/      # Layer + optional GraphStore (v0 in-memory)
+  docs/                 # Phase A research notes + Phase B compile notes
   internal/permissions/
   internal/arms/        # A / B / C
   internal/eval/

@@ -70,6 +70,12 @@ func TestCompileHappyPath_HandleBudgetPermissions(t *testing.T) {
 	if !strings.Contains(resp.Context, "proj-x") {
 		t.Fatal("expected project X in compiled context")
 	}
+	if !resp.Sufficiency.Sufficient {
+		t.Fatalf("day0 compile should be sufficient: %+v", resp.Sufficiency)
+	}
+	if !strings.Contains(resp.Context, "[edge:") {
+		t.Fatal("expected typed edges in compiled context")
+	}
 }
 
 func TestCompileInlineEntitiesDenyKind(t *testing.T) {
@@ -81,7 +87,7 @@ func TestCompileInlineEntitiesDenyKind(t *testing.T) {
 		TaskContract: compiler.TaskContract{Question: task.Question},
 		State:        api.StateRef{Entities: st.All()},
 		Budget:       api.BudgetConfig{TokenBudget: 1500},
-		Permissions: permissions.Policy{DenyKinds: []string{"document"}},
+		Permissions:  permissions.Policy{DenyKinds: []string{"document"}},
 	}
 	raw, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/v1/compile", bytes.NewReader(raw))

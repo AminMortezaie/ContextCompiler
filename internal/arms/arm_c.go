@@ -9,6 +9,7 @@ import (
 	"github.com/aminmortezaie/contextcompiler/internal/compiler"
 	"github.com/aminmortezaie/contextcompiler/internal/fixture"
 	"github.com/aminmortezaie/contextcompiler/internal/llm"
+	"github.com/aminmortezaie/contextcompiler/internal/memory"
 	"github.com/aminmortezaie/contextcompiler/internal/state"
 )
 
@@ -41,11 +42,13 @@ func (a *ArmC) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 	compiled := compiler.Compile(st.All(), contract, compiler.Options{
 		TokenBudget: tokenBudget,
 		Ablation:    a.Ablation,
+		Graph:       memory.DefaultGraph(st.All()),
+		Handle:      memory.InlineHandle,
 	})
 
 	auditBytes, _ := json.Marshal(struct {
 		Contract compiler.TaskContract `json:"contract"`
-		Audit    []compiler.AuditEntry   `json:"audit"`
+		Audit    []compiler.AuditEntry `json:"audit"`
 	}{Contract: compiled.Contract, Audit: compiled.Audit})
 	compileDur := time.Since(start)
 
@@ -74,6 +77,9 @@ func (a *ArmC) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 		CompileLatency: compileDur,
 		LLMLatency:     llmDur,
 		IsStub:         false,
-		Notes:          "task-contract → kind/keyword/ref-graph rank → score/token budget-fit + audit",
+		PackedTokens:   compiled.Budget.TokensUsed,
+		Sufficient:     compiled.Sufficiency.Sufficient,
+		HasSufficiency: true,
+		Notes:          "hybrid lexical∪vector∪graph → typed expand → rank → budget pack + sufficiency",
 	}, nil
 }

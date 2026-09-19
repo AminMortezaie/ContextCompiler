@@ -30,6 +30,9 @@ type Metrics struct {
 	IsStub               bool
 	Notes                string
 	AnswerPreview        string
+	PackedTokens         int  // compiler/arm pack size (chars/4); Phase C cost axis
+	Sufficient           bool // compiler sufficiency; false for A/B
+	HasSufficiency       bool
 }
 
 // Score computes metrics from a RunResult against the golden task.
@@ -94,6 +97,9 @@ func Score(res arms.RunResult, task fixture.Task) Metrics {
 		IsStub:               res.IsStub,
 		Notes:                res.Notes,
 		AnswerPreview:        preview,
+		PackedTokens:         res.PackedTokens,
+		Sufficient:           res.Sufficient,
+		HasSufficiency:       res.HasSufficiency,
 	}
 }
 
