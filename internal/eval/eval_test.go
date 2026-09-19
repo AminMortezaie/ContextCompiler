@@ -19,7 +19,7 @@ func TestHarnessRunsAllArms(t *testing.T) {
 	h := &Harness{
 		Store:       store,
 		Task:        task,
-		Arms:        []arms.Arm{arms.NewArmA(client), arms.NewArmB(client), arms.NewArmC(client)},
+		Arms:        []arms.Arm{arms.NewArmA(client), arms.NewArmB(client, nil, nil, 0), arms.NewArmC(client)},
 		TokenBudget: arms.DefaultTokenBudget,
 		Out:         &buf,
 	}
@@ -43,7 +43,7 @@ func TestHarnessRunsAllArms(t *testing.T) {
 	if !strings.Contains(out, "overhead_pct_of_e2e_latency") {
 		t.Fatal("missing overhead_pct_of_e2e_latency")
 	}
-	if !strings.Contains(out, "Overhead (compile vs e2e)") {
+	if !strings.Contains(out, "Overhead (compile vs e2e latency)") {
 		t.Fatal("missing overhead table")
 	}
 	for _, name := range []string{"A:full-dump", "B:rag", "C:compiler"} {
@@ -95,12 +95,6 @@ func TestScoreOverhead(t *testing.T) {
 	m := Score(res, task)
 	if m.CompileMS != 20 || m.LLMMS != 80 {
 		t.Fatalf("timing split compile=%d llm=%d", m.CompileMS, m.LLMMS)
-	}
-	if m.CompileCostUSD != 0 {
-		t.Fatalf("compile cost want 0 got %v", m.CompileCostUSD)
-	}
-	if m.OverheadPctOfE2ECost != 0 {
-		t.Fatalf("cost overhead want 0 got %v", m.OverheadPctOfE2ECost)
 	}
 	if m.OverheadPctOfE2ELat < 19.9 || m.OverheadPctOfE2ELat > 20.1 {
 		t.Fatalf("lat overhead=%v want ~20", m.OverheadPctOfE2ELat)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aminmortezaie/contextcompiler/internal/embed"
@@ -68,31 +69,36 @@ func (p *Postgres) Close() error {
 	return nil
 }
 
-const migrateSQL = `
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE TABLE IF NOT EXISTS entities (
-    id          TEXT PRIMARY KEY,
-    kind        TEXT NOT NULL,
-    title       TEXT NOT NULL,
-    text        TEXT NOT NULL,
-    ref_ids     TEXT[] NOT NULL DEFAULT '{}',
-    meta        JSONB NOT NULL DEFAULT '{}',
-    embedding   vector(384),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS entities_kind_idx ON entities (kind);
-`
+var (
+	migrateOnce sync.Once
+	migrateSQL  string
+	migrateErr  error
+)
+
+func loadMigrateSQL() (string, error) {
+	migrateOnce.Do(func() {
+		for _, path := range []string{
+			"migrations/001_init.sql",
+			"../../migrations/001_init.sql",
+		} {
+			b, err := os.ReadFile(path)
+			if err == nil {
+				migrateSQL = string(b)
+				return
+			}
+		}
+		migrateErr = fmt.Errorf("migrations/001_init.sql not found (run from repo root)")
+	})
+	return migrateSQL, migrateErr
+}
 
 func (p *Postgres) Migrate(ctx context.Context) error {
-	if _, err := p.pool.Exec(ctx, migrateSQL); err != nil {
+	sql, err := loadMigrateSQL()
+	if err != nil {
 		return err
 	}
-	// HNSW index may fail on empty table in some versions; create if not exists separately.
-	_, _ = p.pool.Exec(ctx, `
-CREATE INDEX IF NOT EXISTS entities_embedding_hnsw
-    ON entities USING hnsw (embedding vector_cosine_ops)
-`)
-	return nil
+	_, err = p.pool.Exec(ctx, sql)
+	return err
 }
 
 func (p *Postgres) Upsert(ctx context.Context, entities []state.Entity, embeddings [][]float32) error {

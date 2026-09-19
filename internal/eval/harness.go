@@ -51,7 +51,7 @@ func (h *Harness) RunAll(ctx context.Context) ([]Metrics, error) {
 	fmt.Fprintln(h.Out, "=== Comparison Table ===")
 	PrintTable(h.Out, all)
 	fmt.Fprintln(h.Out)
-	fmt.Fprintln(h.Out, "=== Overhead (compile vs e2e) ===")
+	fmt.Fprintln(h.Out, "=== Overhead (compile vs e2e latency) ===")
 	PrintOverheadTable(h.Out, all)
 	return all, nil
 }
@@ -64,9 +64,6 @@ func printRunDetail(w io.Writer, m Metrics, res arms.RunResult, goldenN int) {
 	fmt.Fprintf(w, "  latency_ms: %d\n", m.LatencyMS)
 	fmt.Fprintf(w, "  compile_ms: %d\n", m.CompileMS)
 	fmt.Fprintf(w, "  llm_ms: %d\n", m.LLMMS)
-	fmt.Fprintf(w, "  compile_cost_usd: $%.6f\n", m.CompileCostUSD)
-	fmt.Fprintf(w, "  llm_cost_usd: $%.6f\n", m.LLMCostUSD)
-	fmt.Fprintf(w, "  overhead_pct_of_e2e_cost: %.2f%%\n", m.OverheadPctOfE2ECost)
 	fmt.Fprintf(w, "  overhead_pct_of_e2e_latency: %.2f%%\n", m.OverheadPctOfE2ELat)
 	fmt.Fprintf(w, "  relevant_state_recall: %.3f (%d/%d golden)\n", m.RelevantStateRecall, m.RelevantHitCount, goldenN)
 	fmt.Fprintf(w, "  irrelevant_state_ratio: %.3f\n", m.IrrelevantStateRatio)
@@ -97,21 +94,18 @@ func PrintTable(w io.Writer, rows []Metrics) {
 	_ = tw.Flush()
 }
 
-// PrintOverheadTable prints compile vs LLM timing/cost split.
+// PrintOverheadTable prints compile vs LLM timing split (latency proxy for compile overhead).
 func PrintOverheadTable(w io.Writer, rows []Metrics) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ARM\tCOMPILE_MS\tLLM_MS\tCOMPILE_$\tLLM_$\tOH_%_COST\tOH_%_LAT")
+	fmt.Fprintln(tw, "ARM\tCOMPILE_MS\tLLM_MS\tOH_%_LAT")
 	for _, m := range rows {
-		fmt.Fprintf(tw, "%s\t%d\t%d\t$%.6f\t$%.6f\t%.2f%%\t%.2f%%\n",
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%.2f%%\n",
 			m.ArmName,
 			m.CompileMS,
 			m.LLMMS,
-			m.CompileCostUSD,
-			m.LLMCostUSD,
-			m.OverheadPctOfE2ECost,
 			m.OverheadPctOfE2ELat,
 		)
 	}
 	_ = tw.Flush()
-	fmt.Fprintln(w, "Note: compile_cost_usd is $0 for local select/pack (no LLM). OH_%_LAT = compile_ms/total_ms is the measurable proxy for the <~30% of e2e cost criterion when compile spend is free.")
+	fmt.Fprintln(w, "Note: compile is local Go (no LLM spend). OH_%_LAT = compile_ms/total_ms is the measurable overhead proxy.")
 }

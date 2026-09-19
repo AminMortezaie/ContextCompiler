@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aminmortezaie/contextcompiler/internal/tokens"
@@ -31,7 +32,7 @@ func NewOpenAI(apiKey, baseURL, model string) *OpenAI {
 	}
 	return &OpenAI{
 		APIKey:  apiKey,
-		BaseURL: stringsTrimRightSlash(baseURL),
+		BaseURL: strings.TrimRight(baseURL, "/"),
 		Model:   model,
 		Client:  &http.Client{Timeout: 120 * time.Second},
 	}
@@ -126,13 +127,6 @@ func ClientFromEnv() Client {
 		model = "openai/gpt-oss-20b"
 	}
 	return NewOpenAI(key, base, model)
-}
-
-func stringsTrimRightSlash(s string) string {
-	for len(s) > 0 && s[len(s)-1] == '/' {
-		s = s[:len(s)-1]
-	}
-	return s
 }
 
 func trunc(s string, n int) string {

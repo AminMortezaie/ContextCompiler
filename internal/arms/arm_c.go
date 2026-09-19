@@ -16,11 +16,10 @@ import (
 
 // TaskContract is the compiler's structured view of what the task needs.
 type TaskContract struct {
-	Question       string   `json:"question"`
-	ProjectHints   []string `json:"project_hints"`
-	RequiredKinds  []string `json:"required_kinds"`
-	Keywords       []string `json:"keywords"`
-	MustIncludeIDs []string `json:"must_include_ids,omitempty"`
+	Question      string   `json:"question"`
+	ProjectHints  []string `json:"project_hints"`
+	RequiredKinds []string `json:"required_kinds"`
+	Keywords      []string `json:"keywords"`
 }
 
 // AuditEntry records why an entity was included or excluded.
@@ -46,13 +45,11 @@ func (a *ArmC) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 	start := time.Now()
 
 	contract := buildContract(task.Question)
-	ranked, auditDraft := rankByContract(st.All(), contract)
+	ranked, below := rankByContract(st.All(), contract)
 
-	// Budget-fit by score density (score / tokens), greedy.
 	packed, selected, fitAudit := budgetFitByDensity(ranked, tokenBudget)
 	excluded := ExcludedFrom(st.IDs(), selected)
-	audit := finalizeAudit(st.All(), selected, mergeAudit(auditDraft, fitAudit))
-	audit = compactNoiseAudit(st, audit)
+	audit := buildAudit(st.All(), selected, below, fitAudit)
 
 	auditBytes, _ := json.MarshalIndent(struct {
 		Contract TaskContract `json:"contract"`
@@ -99,14 +96,6 @@ func buildContract(question string) TaskContract {
 			keywords = append(keywords, kw)
 		}
 	}
-	// Always seed core delay vocabulary even if phrasing varies slightly.
-	for _, kw := range []string{"project x", "delay", "backend", "decision"} {
-		if !containsStr(keywords, kw) && (strings.Contains(q, "project") || strings.Contains(q, "delay") || strings.Contains(q, "backend")) {
-			if strings.Contains(q, kw) || kw == "project x" && strings.Contains(q, "project x") {
-				keywords = append(keywords, kw)
-			}
-		}
-	}
 	var projects []string
 	if strings.Contains(q, "project x") {
 		projects = append(projects, "project x", "proj-x")
@@ -120,22 +109,13 @@ func buildContract(question string) TaskContract {
 	}
 }
 
-func containsStr(ss []string, t string) bool {
-	for _, s := range ss {
-		if s == t {
-			return true
-		}
-	}
-	return false
-}
-
 type scoredEnt struct {
 	e      state.Entity
 	score  float64
 	reason string
 }
 
-func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, []AuditEntry) {
+func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[string]string) {
 	kindSet := make(map[string]bool)
 	for _, k := range c.RequiredKinds {
 		kindSet[k] = true
@@ -153,14 +133,10 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, []Aud
 		state.KindCompany:      0.2,
 	}
 
-	byID := make(map[string]state.Entity, len(entities))
-	for _, e := range entities {
-		byID[e.ID] = e
-	}
+	scoreByID := make(map[string]float64)
 
 	var ranked []scoredEnt
-	var audit []AuditEntry
-	scoreByID := make(map[string]float64)
+	below := make(map[string]string)
 
 	for _, e := range entities {
 		text := strings.ToLower(e.Title + " " + e.Text)
@@ -192,24 +168,20 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, []Aud
 			}
 		}
 
-		// Noise meta penalty (large fixture tags).
 		if e.Meta != nil && e.Meta["noise"] == "true" {
 			score *= 0.05
 			reasons = append(reasons, "noise-penalty")
 		}
 
-		// Hard exclude ultra-low scores from candidate set (still audited).
 		reason := strings.Join(reasons, ",")
 		if score < 1.0 {
-			audit = append(audit, AuditEntry{ID: e.ID, Action: "exclude", Reason: "below-threshold:" + reason, Score: score})
+			below[e.ID] = "below-threshold:" + reason
 			continue
 		}
 		ranked = append(ranked, scoredEnt{e: e, score: score, reason: reason})
 		scoreByID[e.ID] = score
-		audit = append(audit, AuditEntry{ID: e.ID, Action: "include", Reason: "candidate:" + reason, Score: score})
 	}
 
-	// Ref-graph boost: entities referenced by high-scoring seeds get a bump.
 	for i := range ranked {
 		boost := 0.0
 		for _, ref := range ranked[i].e.RefIDs {
@@ -217,8 +189,6 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, []Aud
 				boost += 1.5
 			}
 		}
-		// Also: if we point TO a high scorer via reverse scan — skip for simplicity;
-		// instead boost if our refs include proj-x / dec-001 / tkt-042 strings.
 		for _, ref := range ranked[i].e.RefIDs {
 			if ref == "proj-x" || ref == "dec-001" || ref == "tkt-042" {
 				boost += 2.0
@@ -237,13 +207,13 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, []Aud
 		}
 		return ranked[i].score > ranked[j].score
 	})
-	return ranked, audit
+	return ranked, below
 }
 
 func budgetFitByDensity(ranked []scoredEnt, tokenBudget int) (packed string, selected []string, fitAudit []AuditEntry) {
 	type cand struct {
 		scoredEnt
-		tok    int
+		tok     int
 		density float64
 	}
 	cands := make([]cand, 0, len(ranked))
@@ -281,86 +251,51 @@ func budgetFitByDensity(ranked []scoredEnt, tokenBudget int) (packed string, sel
 			Score:  c.score,
 		})
 		if used >= tokenBudget {
-			// Mark remaining as excluded by budget.
 			continue
 		}
 	}
 	return b.String(), selected, fitAudit
 }
 
-func mergeAudit(draft, fit []AuditEntry) []AuditEntry {
-	byID := make(map[string]AuditEntry, len(draft)+len(fit))
-	for _, a := range draft {
-		byID[a.ID] = a
-	}
-	for _, a := range fit {
-		prev, ok := byID[a.ID]
-		if !ok {
-			byID[a.ID] = a
-			continue
-		}
-		// Prefer fit decision for final action; keep scores.
-		merged := a
-		if a.Score == 0 {
-			merged.Score = prev.Score
-		}
-		if prev.Reason != "" && a.Reason != "" {
-			merged.Reason = prev.Reason + " | " + a.Reason
-		}
-		byID[a.ID] = merged
-	}
-	out := make([]AuditEntry, 0, len(byID))
-	for _, a := range byID {
-		out = append(out, a)
-	}
-	return out
-}
-
-func finalizeAudit(all []state.Entity, selectedIDs []string, prior []AuditEntry) []AuditEntry {
+// buildAudit walks all entities once: selected → include reasons; others → exclude
+// (bulk noise excludes collapsed into one summary row).
+func buildAudit(all []state.Entity, selectedIDs []string, below map[string]string, fit []AuditEntry) []AuditEntry {
 	sel := make(map[string]bool, len(selectedIDs))
 	for _, id := range selectedIDs {
 		sel[id] = true
 	}
-	byID := make(map[string]AuditEntry, len(prior))
-	for _, a := range prior {
-		byID[a.ID] = a
+	fitByID := make(map[string]AuditEntry, len(fit))
+	for _, a := range fit {
+		fitByID[a.ID] = a
 	}
-	var out []AuditEntry
+
+	noiseN := 0
+	out := make([]AuditEntry, 0, len(selectedIDs)+64)
 	for _, e := range all {
 		if sel[e.ID] {
-			a, ok := byID[e.ID]
-			if !ok || a.Action != "include" {
+			a, ok := fitByID[e.ID]
+			if !ok {
 				a = AuditEntry{ID: e.ID, Action: "include", Reason: "budget-fit retained"}
 			} else {
 				a.Action = "include"
 			}
 			out = append(out, a)
-		} else {
-			a, ok := byID[e.ID]
-			if !ok {
-				a = AuditEntry{ID: e.ID, Action: "exclude", Reason: "not selected by compiler"}
-			} else {
-				a.Action = "exclude"
-			}
-			out = append(out, a)
+			continue
 		}
-	}
-	return out
-}
-
-// compactNoiseAudit keeps all includes and non-noise excludes, and collapses
-// bulk noise excludes into a single summary row (scale-friendly audit).
-func compactNoiseAudit(st *state.Store, audit []AuditEntry) []AuditEntry {
-	noiseN := 0
-	out := make([]AuditEntry, 0, len(audit))
-	for _, a := range audit {
-		e, ok := st.Get(a.ID)
-		isNoise := ok && e.Meta != nil && e.Meta["noise"] == "true"
-		if a.Action == "exclude" && isNoise {
+		if e.Meta != nil && e.Meta["noise"] == "true" {
 			noiseN++
 			continue
 		}
-		out = append(out, a)
+		if reason, ok := below[e.ID]; ok {
+			out = append(out, AuditEntry{ID: e.ID, Action: "exclude", Reason: reason})
+			continue
+		}
+		if a, ok := fitByID[e.ID]; ok {
+			a.Action = "exclude"
+			out = append(out, a)
+			continue
+		}
+		out = append(out, AuditEntry{ID: e.ID, Action: "exclude", Reason: "not selected by compiler"})
 	}
 	if noiseN > 0 {
 		out = append(out, AuditEntry{

@@ -83,7 +83,7 @@ func main() {
 	h := &eval.Harness{
 		Store:       st,
 		Task:        task,
-		Arms:        []arms.Arm{arms.NewArmA(client), arms.NewArmBRAG(client, emb, vs, *topK), arms.NewArmC(client)},
+		Arms:        []arms.Arm{arms.NewArmA(client), arms.NewArmB(client, emb, vs, *topK), arms.NewArmC(client)},
 		TokenBudget: *budget,
 		Out:         os.Stdout,
 	}

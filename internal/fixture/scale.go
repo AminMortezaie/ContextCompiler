@@ -88,26 +88,6 @@ func Scale(targetTokens int, seed int64) (*state.Store, Task) {
 	return state.NewStore(entities), task
 }
 
-// Scale100K is Scale(TargetTokens100K, DefaultSeed).
-func Scale100K() (*state.Store, Task) {
-	return Scale(TargetTokens100K, DefaultSeed)
-}
-
-// Scale500K is Scale(TargetTokens500K, DefaultSeed).
-func Scale500K() (*state.Store, Task) {
-	return Scale(TargetTokens500K, DefaultSeed)
-}
-
-// Scale1M is Scale(TargetTokens1M, DefaultSeed).
-func Scale1M() (*state.Store, Task) {
-	return Scale(TargetTokens1M, DefaultSeed)
-}
-
-// Scale5M is Scale(TargetTokens5M, DefaultSeed).
-func Scale5M() (*state.Store, Task) {
-	return Scale(TargetTokens5M, DefaultSeed)
-}
-
 // EstimateStoreTokens returns chars/4 estimate of all packed entity texts.
 func EstimateStoreTokens(st *state.Store) int {
 	return estimateEntities(st.All())

@@ -25,7 +25,7 @@ func TestDay0HasGoldenRelevantIDs(t *testing.T) {
 }
 
 func TestScale100KApprox(t *testing.T) {
-	st, task := Scale100K()
+	st, task := Scale(TargetTokens100K, DefaultSeed)
 	est := EstimateStoreTokens(st)
 	// Allow ±5% around target.
 	lo := TargetTokens100K * 95 / 100
@@ -58,7 +58,7 @@ func TestScaleDeterministic(t *testing.T) {
 }
 
 func TestScale500KApprox(t *testing.T) {
-	st, task := Scale500K()
+	st, task := Scale(TargetTokens500K, DefaultSeed)
 	est := EstimateStoreTokens(st)
 	lo := TargetTokens500K * 95 / 100
 	hi := TargetTokens500K * 105 / 100
@@ -77,7 +77,7 @@ func TestScale500KApprox(t *testing.T) {
 }
 
 func TestScale1MApprox(t *testing.T) {
-	st, task := Scale1M()
+	st, task := Scale(TargetTokens1M, DefaultSeed)
 	est := EstimateStoreTokens(st)
 	lo := TargetTokens1M * 95 / 100
 	if est < lo || est > TargetTokens1M+20000 {
@@ -95,7 +95,7 @@ func TestScale1MApprox(t *testing.T) {
 }
 
 func TestScale5MApprox(t *testing.T) {
-	st, task := Scale5M()
+	st, task := Scale(TargetTokens5M, DefaultSeed)
 	est := EstimateStoreTokens(st)
 	lo := TargetTokens5M * 95 / 100
 	if est < lo || est > TargetTokens5M+50000 {

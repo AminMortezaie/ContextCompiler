@@ -15,10 +15,10 @@ import (
 	"github.com/aminmortezaie/contextcompiler/internal/tokens"
 )
 
-// ArmB is RAG: embed query → vector top-k (optional keyword hybrid re-rank) → pack → LLM.
+// ArmB is RAG: embed query → vector top-k → pack → LLM.
 // When VectorStore is nil, falls back to in-memory keyword top-k (unit-test safe).
 // Indexing is done once outside the arm (bench harness); compile phase here is
-// query-embed + search + hybrid re-rank + pack only.
+// query-embed + search + pack only.
 type ArmB struct {
 	LLM      llm.Client
 	Embedder embed.Provider
@@ -26,12 +26,8 @@ type ArmB struct {
 	TopK     int
 }
 
-func NewArmB(client llm.Client) *ArmB {
-	return &ArmB{LLM: client, Embedder: embed.NewHash(), TopK: 12}
-}
-
-// NewArmBRAG constructs arm B with explicit embedder + vector store.
-func NewArmBRAG(client llm.Client, emb embed.Provider, vs store.VectorStore, topK int) *ArmB {
+// NewArmB constructs arm B. Nil embedder defaults to hash; nil VectorStore uses keyword fallback.
+func NewArmB(client llm.Client, emb embed.Provider, vs store.VectorStore, topK int) *ArmB {
 	if emb == nil {
 		emb = embed.NewHash()
 	}
@@ -60,30 +56,17 @@ func (a *ArmB) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 		if err != nil {
 			return RunResult{}, err
 		}
-		fetch := a.TopK * 4
-		if fetch < 48 {
-			fetch = 48
-		}
-		hits, err := a.Vectors.Search(ctx, qEmb, fetch)
+		hits, err := a.Vectors.Search(ctx, qEmb, a.TopK)
 		if err != nil {
 			ranked = keywordTopK(st.All(), task.Question, a.TopK)
 			notes = fmt.Sprintf("vector search failed (%v); keyword fallback", err)
 			isStub = true
 		} else {
-			kw := keywordTopK(st.All(), task.Question, a.TopK*2)
-			seen := map[string]bool{}
-			for _, h := range hits {
-				seen[h.Entity.ID] = true
+			ranked = make([]state.Entity, len(hits))
+			for i, h := range hits {
+				ranked[i] = h.Entity
 			}
-			for _, e := range kw {
-				if seen[e.ID] {
-					continue
-				}
-				hits = append(hits, store.ScoredEntity{Entity: e, Score: 0.02})
-				seen[e.ID] = true
-			}
-			ranked = hybridRerank(hits, task.Question, a.TopK)
-			notes = fmt.Sprintf("vector RAG via %s + %s top-%d (hybrid vector+keyword; pack by density)", a.Embedder.Name(), a.Vectors.Name(), a.TopK)
+			notes = fmt.Sprintf("vector RAG via %s + %s top-%d (pack by density)", a.Embedder.Name(), a.Vectors.Name(), a.TopK)
 		}
 	} else {
 		ranked = keywordTopK(st.All(), task.Question, a.TopK)
@@ -91,7 +74,6 @@ func (a *ArmB) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 		isStub = true
 	}
 
-	// Pack by score density so long noise cannot crowd out short relevant hits.
 	packed, selected := packByShortestFirst(ranked, tokenBudget)
 	excluded := ExcludedFrom(st.IDs(), selected)
 	compileDur := time.Since(start)
@@ -144,41 +126,6 @@ func packByShortestFirst(entities []state.Entity, tokenBudget int) (packed strin
 	return b.String(), selected
 }
 
-func hybridRerank(hits []store.ScoredEntity, query string, k int) []state.Entity {
-	qSet := tokenSet(query)
-	type row struct {
-		e     state.Entity
-		score float64
-	}
-	rows := make([]row, 0, len(hits))
-	for _, h := range hits {
-		textSet := tokenSet(h.Entity.Title + " " + h.Entity.Text)
-		kw := 0.0
-		for w := range qSet {
-			if textSet[w] {
-				kw += 1.0
-			}
-		}
-		combined := h.Score + 0.55*kw
-		// Prefer shorter docs slightly (density) — long noise padding is a liability.
-		tokEst := float64(len(h.Entity.Text)+1) / 400.0
-		if tokEst < 1 {
-			tokEst = 1
-		}
-		combined = combined / (0.5 + 0.5*tokEst)
-		rows = append(rows, row{e: h.Entity, score: combined})
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].score > rows[j].score })
-	if k > len(rows) {
-		k = len(rows)
-	}
-	out := make([]state.Entity, 0, k)
-	for i := 0; i < k; i++ {
-		out = append(out, rows[i].e)
-	}
-	return out
-}
-
 func keywordTopK(entities []state.Entity, query string, k int) []state.Entity {
 	qSet := tokenSet(query)
 	type scored struct {
@@ -194,7 +141,6 @@ func keywordTopK(entities []state.Entity, query string, k int) []state.Entity {
 				score += 1.0
 			}
 		}
-		// length penalty for keyword path
 		lengthPen := float64(len(e.Text)) / 2000.0
 		score -= lengthPen
 		scoredList = append(scoredList, scored{e: e, score: score})
@@ -221,7 +167,6 @@ func tokenSet(s string) map[string]bool {
 		if len(f) < 2 || stop[f] {
 			continue
 		}
-		// light stem
 		for _, suf := range []string{"ing", "ed", "ly", "es", "s"} {
 			if len(f) > len(suf)+3 && strings.HasSuffix(f, suf) {
 				f = f[:len(f)-len(suf)]
@@ -229,16 +174,6 @@ func tokenSet(s string) map[string]bool {
 			}
 		}
 		out[f] = true
-	}
-	return out
-}
-
-// tokenize kept for any residual callers / tests.
-func tokenize(s string) []string {
-	set := tokenSet(s)
-	out := make([]string, 0, len(set))
-	for w := range set {
-		out = append(out, w)
 	}
 	return out
 }

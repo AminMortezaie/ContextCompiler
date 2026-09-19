@@ -50,7 +50,7 @@ Local tree at `/workspace/context-compiler`.
 - Arm A (full-dump): implemented
 - Arm B (RAG): hash-bow-384 embeddings + pgvector (memory fallback)
 - Arm C (compiler): task-contract + multi-signal rank + density budget-fit + include/exclude audit
-- Fixture: deterministic Scale100K (~100K tokens, chars/4)
+- Fixture: deterministic Scale(TargetTokens100K, seed) (~100K tokens, chars/4)
 - Eval harness: task success, tokens, est. cost, latency, relevant-state recall, irrelevant-state ratio
 - LLM: mock default; OpenAI-compatible via env when key present
 

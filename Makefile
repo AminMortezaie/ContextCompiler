@@ -1,18 +1,11 @@
-.PHONY: bench bench-500k bench-1m bench-5m bench-small test tidy db-up db-down db-logs migrate
+.PHONY: bench bench-small test tidy db-up db-down db-logs migrate
 
 DATABASE_URL ?= postgres://contextcompiler:contextcompiler@localhost:5432/contextcompiler?sslmode=disable
+TOKENS ?= 100000
+BUDGET ?= 2000
 
 bench:
-	go run ./cmd/bench -tokens 100000 -budget 2000
-
-bench-500k:
-	go run ./cmd/bench -tokens 500000 -budget 2000
-
-bench-1m:
-	go run ./cmd/bench -tokens 1000000 -budget 2000
-
-bench-5m:
-	go run ./cmd/bench -tokens 5000000 -budget 2000
+	go run ./cmd/bench -tokens $(TOKENS) -budget $(BUDGET)
 
 bench-small:
 	go run ./cmd/bench -small

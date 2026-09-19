@@ -25,12 +25,3 @@ type ScoredEntity struct {
 	Entity state.Entity
 	Score  float64
 }
-
-// EntitiesFromScored unwraps scored hits in order.
-func EntitiesFromScored(hits []ScoredEntity) []state.Entity {
-	out := make([]state.Entity, len(hits))
-	for i, h := range hits {
-		out[i] = h.Entity
-	}
-	return out
-}

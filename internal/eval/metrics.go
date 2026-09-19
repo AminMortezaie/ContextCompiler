@@ -15,14 +15,11 @@ type Metrics struct {
 	InputTokens          int
 	OutputTokens         int
 	TotalTokens          int
-	EstCostUSD           float64 // end-to-end estimated cost (LLM tokens; compile is local ≈ $0)
+	EstCostUSD           float64 // estimated LLM cost (compile is local)
 	LatencyMS            int64   // end-to-end wall ms
 	CompileMS            int64   // select/rank/pack (+ retrieval for B)
 	LLMMS                int64   // LLM Generate wall ms
-	CompileCostUSD       float64 // local compile; prototype treats as $0
-	LLMCostUSD           float64 // tokens.EstimateCostUSD on LLM usage
-	OverheadPctOfE2ECost float64 // compile_cost / total_e2e_cost * 100 (0 when compile free)
-	OverheadPctOfE2ELat  float64 // compile_ms / total_ms * 100 (latency proxy for <$30% criterion)
+	OverheadPctOfE2ELat  float64 // compile_ms / total_ms * 100
 	RelevantStateRecall  float64 // |selected ∩ relevant| / |relevant|
 	IrrelevantStateRatio float64 // |selected − relevant| / |selected|
 	SelectedCount        int
@@ -66,12 +63,6 @@ func Score(res arms.RunResult, task fixture.Task) Metrics {
 	}
 
 	llmCost := tokens.EstimateCostUSD(res.TotalTokens)
-	compileCost := 0.0 // local Go compile/select/pack; no LLM spend in this prototype
-	e2eCost := compileCost + llmCost
-	overheadCostPct := 0.0
-	if e2eCost > 0 {
-		overheadCostPct = compileCost / e2eCost * 100.0
-	}
 
 	totalMS := res.Latency.Milliseconds()
 	compileMS := res.CompileLatency.Milliseconds()
@@ -87,13 +78,10 @@ func Score(res arms.RunResult, task fixture.Task) Metrics {
 		InputTokens:          res.InputTokens,
 		OutputTokens:         res.OutputTokens,
 		TotalTokens:          res.TotalTokens,
-		EstCostUSD:           e2eCost,
+		EstCostUSD:           llmCost,
 		LatencyMS:            totalMS,
 		CompileMS:            compileMS,
 		LLMMS:                llmMS,
-		CompileCostUSD:       compileCost,
-		LLMCostUSD:           llmCost,
-		OverheadPctOfE2ECost: overheadCostPct,
 		OverheadPctOfE2ELat:  overheadLatPct,
 		RelevantStateRecall:  recall,
 		IrrelevantStateRatio: irrRatio,

@@ -15,7 +15,7 @@ import (
 func TestAllArmsRun(t *testing.T) {
 	st, task := fixture.Day0()
 	client := llm.NewMock()
-	armsList := []Arm{NewArmA(client), NewArmB(client), NewArmC(client)}
+	armsList := []Arm{NewArmA(client), NewArmB(client, nil, nil, 0), NewArmC(client)}
 	for _, arm := range armsList {
 		res, err := arm.Run(context.Background(), st, task, DefaultTokenBudget)
 		if err != nil {
@@ -41,7 +41,7 @@ func TestArmBWithMemoryVectors(t *testing.T) {
 	if err := store.IndexStore(ctx, vs, st, emb); err != nil {
 		t.Fatal(err)
 	}
-	res, err := NewArmBRAG(llm.NewMock(), emb, vs, 8).Run(ctx, st, task, DefaultTokenBudget)
+	res, err := NewArmB(llm.NewMock(), emb, vs, 8).Run(ctx, st, task, DefaultTokenBudget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestArmCDiffersFromArmB(t *testing.T) {
 	emb := embed.NewHash()
 	_ = store.IndexStore(ctx, vs, st, emb)
 
-	b, err := NewArmBRAG(client, emb, vs, 5).Run(ctx, st, task, 600)
+	b, err := NewArmB(client, emb, vs, 5).Run(ctx, st, task, 600)
 	if err != nil {
 		t.Fatal(err)
 	}
