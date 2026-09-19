@@ -45,16 +45,17 @@ func (a *ArmC) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 	start := time.Now()
 
 	contract := buildContract(task.Question)
-	ranked, below := rankByContract(st.All(), contract)
+	entities := st.All()
+	ranked, below, noiseExcluded := rankByContract(entities, contract)
 
 	packed, selected, fitAudit := budgetFitByDensity(ranked, tokenBudget)
-	excluded := ExcludedFrom(st.IDs(), selected)
-	audit := buildAudit(st.All(), selected, below, fitAudit)
+	excluded := compilerExcludedIDs(entities, selected)
+	audit := buildAudit(selected, below, fitAudit, noiseExcluded)
 
-	auditBytes, _ := json.MarshalIndent(struct {
+	auditBytes, _ := json.Marshal(struct {
 		Contract TaskContract `json:"contract"`
 		Audit    []AuditEntry `json:"audit"`
-	}{Contract: contract, Audit: audit}, "", "  ")
+	}{Contract: contract, Audit: audit})
 	compileDur := time.Since(start)
 
 	system := "You answer questions about organizational state using only the provided context."
@@ -115,7 +116,7 @@ type scoredEnt struct {
 	reason string
 }
 
-func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[string]string) {
+func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[string]string, int) {
 	kindSet := make(map[string]bool)
 	for _, k := range c.RequiredKinds {
 		kindSet[k] = true
@@ -137,9 +138,15 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[s
 
 	var ranked []scoredEnt
 	below := make(map[string]string)
+	noiseExcluded := 0
 
 	for _, e := range entities {
-		text := strings.ToLower(e.Title + " " + e.Text)
+		if e.Meta != nil && e.Meta["noise"] == "true" {
+			// Synthetic dilution: max kind prior 5×0.05=0.25, always below rank threshold.
+			noiseExcluded++
+			continue
+		}
+
 		score := kindPrior[e.Kind]
 		reasons := []string{}
 
@@ -150,9 +157,10 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[s
 			reasons = append(reasons, "kind-prior")
 		}
 
+		titleLower := strings.ToLower(e.Title)
 		kwHits := 0
 		for _, kw := range c.Keywords {
-			if strings.Contains(text, kw) {
+			if strings.Contains(titleLower, kw) || containsFold(e.Text, kw) {
 				kwHits++
 				score += 3.0
 			}
@@ -162,15 +170,11 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[s
 		}
 
 		for _, ph := range c.ProjectHints {
-			if strings.Contains(text, ph) || strings.Contains(strings.ToLower(e.ID), strings.ReplaceAll(ph, " ", "-")) {
+			if strings.Contains(titleLower, ph) || containsFold(e.Text, ph) ||
+				strings.Contains(strings.ToLower(e.ID), strings.ReplaceAll(ph, " ", "-")) {
 				score += 4.0
 				reasons = append(reasons, "project-hint")
 			}
-		}
-
-		if e.Meta != nil && e.Meta["noise"] == "true" {
-			score *= 0.05
-			reasons = append(reasons, "noise-penalty")
 		}
 
 		reason := strings.Join(reasons, ",")
@@ -207,7 +211,19 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[s
 		}
 		return ranked[i].score > ranked[j].score
 	})
-	return ranked, below
+	return ranked, below, noiseExcluded
+}
+
+func containsFold(s, substr string) bool {
+	if substr == "" {
+		return true
+	}
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if strings.EqualFold(s[i:i+len(substr)], substr) {
+			return true
+		}
+	}
+	return false
 }
 
 func budgetFitByDensity(ranked []scoredEnt, tokenBudget int) (packed string, selected []string, fitAudit []AuditEntry) {
@@ -257,9 +273,8 @@ func budgetFitByDensity(ranked []scoredEnt, tokenBudget int) (packed string, sel
 	return b.String(), selected, fitAudit
 }
 
-// buildAudit walks all entities once: selected → include reasons; others → exclude
-// (bulk noise excludes collapsed into one summary row).
-func buildAudit(all []state.Entity, selectedIDs []string, below map[string]string, fit []AuditEntry) []AuditEntry {
+// buildAudit assembles include/exclude rows from compiler outputs only (O(candidates), not O(all entities)).
+func buildAudit(selectedIDs []string, below map[string]string, fit []AuditEntry, noiseExcluded int) []AuditEntry {
 	sel := make(map[string]bool, len(selectedIDs))
 	for _, id := range selectedIDs {
 		sel[id] = true
@@ -269,40 +284,52 @@ func buildAudit(all []state.Entity, selectedIDs []string, below map[string]strin
 		fitByID[a.ID] = a
 	}
 
-	noiseN := 0
-	out := make([]AuditEntry, 0, len(selectedIDs)+64)
-	for _, e := range all {
-		if sel[e.ID] {
-			a, ok := fitByID[e.ID]
-			if !ok {
-				a = AuditEntry{ID: e.ID, Action: "include", Reason: "budget-fit retained"}
-			} else {
-				a.Action = "include"
-			}
+	out := make([]AuditEntry, 0, len(selectedIDs)+len(below)+len(fit)+4)
+	for _, id := range selectedIDs {
+		a, ok := fitByID[id]
+		if !ok {
+			a = AuditEntry{ID: id, Action: "include", Reason: "budget-fit retained"}
+		} else {
+			a.Action = "include"
+		}
+		out = append(out, a)
+	}
+	for id, reason := range below {
+		if sel[id] {
+			continue
+		}
+		out = append(out, AuditEntry{ID: id, Action: "exclude", Reason: reason})
+	}
+	for _, a := range fit {
+		if a.Action == "exclude" {
 			out = append(out, a)
+		}
+	}
+	if noiseExcluded > 0 {
+		out = append(out, AuditEntry{
+			ID:     fmt.Sprintf("noise-excluded-summary(%d)", noiseExcluded),
+			Action: "exclude",
+			Reason: fmt.Sprintf("collapsed %d noise entities excluded by compiler", noiseExcluded),
+		})
+	}
+	return out
+}
+
+// compilerExcludedIDs lists non-selected, non-noise entity IDs (noise summarized in audit).
+func compilerExcludedIDs(entities []state.Entity, selected []string) []string {
+	sel := make(map[string]struct{}, len(selected))
+	for _, id := range selected {
+		sel[id] = struct{}{}
+	}
+	var out []string
+	for _, e := range entities {
+		if _, ok := sel[e.ID]; ok {
 			continue
 		}
 		if e.Meta != nil && e.Meta["noise"] == "true" {
-			noiseN++
 			continue
 		}
-		if reason, ok := below[e.ID]; ok {
-			out = append(out, AuditEntry{ID: e.ID, Action: "exclude", Reason: reason})
-			continue
-		}
-		if a, ok := fitByID[e.ID]; ok {
-			a.Action = "exclude"
-			out = append(out, a)
-			continue
-		}
-		out = append(out, AuditEntry{ID: e.ID, Action: "exclude", Reason: "not selected by compiler"})
-	}
-	if noiseN > 0 {
-		out = append(out, AuditEntry{
-			ID:     fmt.Sprintf("noise-excluded-summary(%d)", noiseN),
-			Action: "exclude",
-			Reason: fmt.Sprintf("collapsed %d noise entities excluded by compiler", noiseN),
-		})
+		out = append(out, e.ID)
 	}
 	return out
 }
