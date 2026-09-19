@@ -1,5 +1,62 @@
 # Context Compiler
 
+Task-aware **context compilation**: select org-state **candidates** and pack them under a **shared ~2K token budget**, with an include/exclude audit. Experiment harness + a small compile API. **Not** a product, **not** a trained model, **no** LangChain.
+
+Arm A is naïve **insertion-order packing from the full candidate corpus** — the LLM never sees a 100K–5M token dump. Every arm uses the same packing budget (default 2000, chars/4).
+
+## How to try (<10 minutes)
+
+No API keys. No Docker. Requires **Go 1.24+** (`go version`; see `go.mod`). `jq` is optional (pretty-print only).
+
+```bash
+git clone https://github.com/AminMortezaie/ContextCompiler.git
+cd ContextCompiler
+go test ./...          # no Docker / API keys
+make api               # listens on :8080
+# or: go run ./cmd/api -addr :8080
+```
+
+In another terminal:
+
+```bash
+curl -sS -o /tmp/compile.json -w "HTTP %{http_code}\n" http://localhost:8080/v1/compile \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "task_contract": {
+      "question": "Why was Project X delayed, who made the decision, and what should the backend team do?"
+    },
+    "state": { "handle": "day0" },
+    "budget": { "token_budget": 2000 },
+    "permissions": {
+      "allow_kinds": ["project", "decision", "ticket", "user", "conversation", "task", "team"]
+    }
+  }'
+# expect: HTTP 200
+# jq is optional:
+jq '{keys: keys, budget_usage, audit_len: (.audit|length), compiled_chars: (.compiled_context|length)}' /tmp/compile.json
+```
+
+Success: **HTTP 200** with `compiled_context`, `audit`, and `budget_usage` (`token_budget`, `tokens_used`). Built-in state handle: `day0` (Project X fixture). Health check: `GET /healthz`.
+
+Optional, still no keys:
+
+```bash
+make bench-multitask   # Phase 3 mock suite; Postgres warning + in-memory fallback is expected
+```
+
+## What feedback we want
+
+**Blunt try-path feedback**, not compliments. Did `clone → go test → make api → POST /v1/compile` work in under 10 minutes? Where did you get stuck (Go version, Makefile, curl path, missing dep, env surprise)? Did any sentence here overclaim what the LLM saw or what the compiler is?
+
+## Caveats (read before citing numbers)
+
+- **Hash embeddings.** Default embedder is **hash-bow-384** (bag-of-words → FNV buckets → L2). Deterministic and offline-reproducible. It is **not** a neural embedding model.
+- **Synthetic fixtures.** Day-0 and the 100K→5M ladder are generated org-state, not production data.
+- **Relative $ cost estimator.** Bench `est_cost_usd` is `chars/4` tokens × a constant **$0.002 / 1K tokens**. Use it to compare arms in one run. It is **not** a vendor invoice or tokenizer-accurate cost.
+- **Heuristic compiler.** Arm C / `POST /v1/compile` is a deterministic rank + budget-fit pipeline (keyword/kind/ref-graph heuristics). It is **not** a trained model.
+
+---
+
 ## Phase 2 — Compile API (middleware beachhead)
 
 HTTP service that accepts a **task contract** plus org state (handle or inline entities) and returns **compiled context**, **include/exclude audit**, and **token budget usage**. Permissions hooks (allow/deny entity kinds) run before ranking. Org state sits on a pluggable in-memory handle layer for v0 (`internal/memory`); Phase 1 bench arms are unchanged.
@@ -28,7 +85,7 @@ curl -sS http://localhost:8080/v1/compile \
     "permissions": {
       "allow_kinds": ["project", "decision", "ticket", "user", "conversation", "task", "team"]
     }
-  }' | jq .
+  }'
 ```
 
 Response fields: `compiled_context`, `contract`, `audit`, `selected_ids`, `excluded_ids`, `budget_usage` (`token_budget`, `tokens_used`).
@@ -61,13 +118,15 @@ go run ./cmd/bench -suite -small -mock -budget 2000
 go run ./cmd/bench -suite -small -mock -ablations   # adds C:compiler-no-* single-knob ablations
 ```
 
+Without Docker, expect a Postgres connection warning; Arm B falls back to the **in-memory** vector store. That is success, not a failed setup.
+
 Phase 1 `make bench` and Phase 2 `make api` / `/v1/compile` are unchanged. Compiler **ablation knobs** live in `internal/compiler.Ablation` and are exercised via `arms.NewArmCAblation` in the multi-task bench only (production compile API stays full pipeline).
 
 ---
 
 ## Phase 1 — Experiment harness
 
-## Experimental question
+### Experimental question
 
 Does **task-aware context compilation** beat naïve **insertion-order packing from the full candidate org-state** (Arm A) and standard retrieval (Arm B) under the **same fixed LLM context budget** without dropping quality?
 
@@ -101,13 +160,16 @@ Run the same A/B/C bakeoff at each corpus rung with that **shared packing budget
 
 ```bash
 go test ./...                              # no Docker / API keys
-make bench                                 # ~100K (default TOKENS=100000)
-make bench TOKENS=500000                   # ~500K
-make bench TOKENS=1000000                  # ~1M
-make bench TOKENS=5000000                  # ~5M
+make bench                                 # ~100K (default TOKENS=100000); mock if no key
+make bench MOCK=1                          # force mock even if an API key is set
+make bench TOKENS=500000 MOCK=1            # ~500K
+make bench TOKENS=1000000 MOCK=1           # ~1M
+make bench TOKENS=5000000 MOCK=1           # ~5M
 go run ./cmd/bench -tokens 500000 -budget 2000 -mock   # explicit flags
 make bench-small                           # Day-0 tiny fixture (-small)
 ```
+
+`make bench -mock` does **not** pass `-mock` into the binary (GNU make eats `-m` / `-o`). Use `MOCK=1` or `go run ./cmd/bench -mock`.
 
 See `VISION.md`.
 
@@ -115,11 +177,11 @@ See `VISION.md`.
 
 Go + PostgreSQL + pgvector + one LLM API. **No** LangChain / LangGraph.
 
-## Quick start (mock LLM, optional Postgres)
+## Bench flags and optional Postgres
 
 ```bash
-make db-up          # optional: docker compose up -d
-make bench -mock    # or: go run ./cmd/bench -mock
+make db-up                 # optional: docker compose up -d
+make bench MOCK=1          # or: go run ./cmd/bench -mock
 ```
 
 ### Flags
@@ -149,7 +211,7 @@ Without a key, mock is used and a warning is printed.
 
 ### Embeddings
 
-**hash-bow-384** (default): deterministic bag-of-words → FNV buckets → L2; offline-reproducible bakeoff path (dim 384).
+**hash-bow-384** (default): deterministic bag-of-words → FNV buckets → L2; offline-reproducible bakeoff path (dim 384). Not a neural embedder — see [Caveats](#caveats-read-before-citing-numbers).
 
 ### Database
 
@@ -172,7 +234,7 @@ All three call the LLM with a context pack capped at `-budget` (default 2000 tok
 
 ## Eval harness
 
-Every run prints **task_success**, **retrieval_recall**, **context_recall**, token/cost estimates, latency, **compile_ms vs llm_ms**, **overhead_pct_of_e2e_latency**, and irrelevant ratio. Indexing for Arm B runs once in the bench harness before arms and is not counted in per-arm `compile_ms`.
+Every run prints **task_success**, **retrieval_recall**, **context_recall**, token/cost estimates (see [Caveats](#caveats-read-before-citing-numbers)), latency, **compile_ms vs llm_ms**, **overhead_pct_of_e2e_latency**, and irrelevant ratio. Indexing for Arm B runs once in the bench harness before arms and is not counted in per-arm `compile_ms`.
 
 Compile is local Go (no LLM spend); latency overhead is the measurable proxy for the “compile overhead” experiment criterion.
 

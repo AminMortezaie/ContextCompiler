@@ -5,9 +5,14 @@ API_ADDR ?= :8080
 DATABASE_URL ?= postgres://contextcompiler:contextcompiler@localhost:5432/contextcompiler?sslmode=disable
 TOKENS ?= 100000
 BUDGET ?= 2000
+# GNU make treats `make bench -mock` as its own flags (not passed through). Use MOCK=1.
+MOCK ?= 0
+ifeq ($(MOCK),1)
+MOCK_FLAG := -mock
+endif
 
 bench:
-	go run ./cmd/bench -tokens $(TOKENS) -budget $(BUDGET)
+	go run ./cmd/bench -tokens $(TOKENS) -budget $(BUDGET) $(MOCK_FLAG)
 
 bench-small:
 	go run ./cmd/bench -small
