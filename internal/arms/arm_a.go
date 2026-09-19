@@ -24,10 +24,6 @@ func (a *ArmA) Run(ctx context.Context, store *state.Store, task fixture.Task, t
 	start := time.Now()
 
 	all := store.All()
-	retrieved := make([]string, 0, len(all))
-	for _, e := range all {
-		retrieved = append(retrieved, e.ID)
-	}
 	packed, selected := PackEntities(all, tokenBudget)
 	excluded := ExcludedFrom(store.IDs(), selected)
 	compileDur := time.Since(start)
@@ -45,7 +41,7 @@ func (a *ArmA) Run(ctx context.Context, store *state.Store, task fixture.Task, t
 	return RunResult{
 		ArmName:        a.Name(),
 		PackedContext:  packed,
-		RetrievedIDs:   retrieved,
+		RetrievedIDs:   store.IDs(),
 		SelectedIDs:    selected,
 		ExcludedIDs:    excluded,
 		Answer:         resp.Text,

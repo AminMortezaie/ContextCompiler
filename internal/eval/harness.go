@@ -67,7 +67,6 @@ func printRunDetail(w io.Writer, m Metrics, res arms.RunResult, goldenN int) {
 	fmt.Fprintf(w, "  overhead_pct_of_e2e_latency: %.2f%%\n", m.OverheadPctOfE2ELat)
 	fmt.Fprintf(w, "  retrieval_recall: %.3f (%d/%d golden)\n", m.RetrievalRecall, m.RetrievalHitCount, goldenN)
 	fmt.Fprintf(w, "  context_recall: %.3f (%d/%d golden)\n", m.ContextRecall, m.RelevantHitCount, goldenN)
-	fmt.Fprintf(w, "  relevant_state_recall: %.3f (alias for context_recall)\n", m.RelevantStateRecall)
 	fmt.Fprintf(w, "  irrelevant_state_ratio: %.3f\n", m.IrrelevantStateRatio)
 	fmt.Fprintf(w, "  selected: %d ids: %s\n", m.SelectedCount, strings.Join(res.SelectedIDs, ","))
 	fmt.Fprintf(w, "  notes: %s\n", m.Notes)

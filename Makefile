@@ -13,7 +13,7 @@ bench-small:
 	go run ./cmd/bench -small
 
 bench-multitask:
-	go run ./cmd/bench-multitask -small -mock -budget $(BUDGET)
+	go run ./cmd/bench -suite -small -mock -budget $(BUDGET)
 
 test:
 	go test ./...

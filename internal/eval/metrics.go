@@ -23,7 +23,6 @@ type Metrics struct {
 	OverheadPctOfE2ELat  float64 // compile_ms / total_ms * 100
 	RetrievalRecall      float64 // |retrieved ∩ relevant| / |relevant|
 	ContextRecall        float64 // |packed selected ∩ relevant| / |relevant|
-	RelevantStateRecall  float64 // same as ContextRecall (Phase 1 column name)
 	IrrelevantStateRatio float64 // |selected − relevant| / |selected|
 	SelectedCount        int
 	RetrievalHitCount    int
@@ -88,7 +87,6 @@ func Score(res arms.RunResult, task fixture.Task) Metrics {
 		OverheadPctOfE2ELat:  overheadLatPct,
 		RetrievalRecall:      retrievalRecall,
 		ContextRecall:        contextRecall,
-		RelevantStateRecall:  contextRecall,
 		IrrelevantStateRatio: irrRatio,
 		SelectedCount:        len(res.SelectedIDs),
 		RetrievalHitCount:    retrievalHit,

@@ -51,14 +51,7 @@ func Compile(entities []state.Entity, contract TaskContract, opts Options) Resul
 		retrieved = append(retrieved, r.e.ID)
 	}
 
-	var packed string
-	var selected []string
-	var fitAudit []AuditEntry
-	if opts.Ablation.NoBudgetFit {
-		packed, selected, fitAudit = budgetFitByRankOrder(ranked, opts.TokenBudget)
-	} else {
-		packed, selected, fitAudit = budgetFitByDensity(ranked, opts.TokenBudget)
-	}
+	packed, selected, fitAudit := budgetFit(ranked, opts.TokenBudget, opts.Ablation.NoBudgetFit)
 	excluded := compilerExcludedIDs(allowed, selected)
 
 	var audit []AuditEntry
@@ -66,10 +59,6 @@ func Compile(entities []state.Entity, contract TaskContract, opts Options) Resul
 		audit = buildAudit(selected, below, fitAudit, noiseExcluded)
 		for _, d := range permDenials {
 			audit = append([]AuditEntry{{ID: d.ID, Action: "exclude", Reason: d.Reason}}, audit...)
-		}
-	} else {
-		for _, d := range permDenials {
-			audit = append(audit, AuditEntry{ID: d.ID, Action: "exclude", Reason: d.Reason})
 		}
 	}
 
@@ -219,7 +208,7 @@ func containsFold(s, substr string) bool {
 	return false
 }
 
-func budgetFitByDensity(ranked []scoredEnt, tokenBudget int) (packed string, selected []string, fitAudit []AuditEntry) {
+func budgetFit(ranked []scoredEnt, tokenBudget int, rankOrderOnly bool) (packed string, selected []string, fitAudit []AuditEntry) {
 	type cand struct {
 		scoredEnt
 		tok     int
@@ -233,63 +222,37 @@ func budgetFitByDensity(ranked []scoredEnt, tokenBudget int) (packed string, sel
 		}
 		cands = append(cands, cand{scoredEnt: r, tok: tok, density: r.score / float64(tok)})
 	}
-	sort.Slice(cands, func(i, j int) bool {
-		if cands[i].density == cands[j].density {
-			return cands[i].score > cands[j].score
-		}
-		return cands[i].density > cands[j].density
-	})
+	if !rankOrderOnly {
+		sort.Slice(cands, func(i, j int) bool {
+			if cands[i].density == cands[j].density {
+				return cands[i].score > cands[j].score
+			}
+			return cands[i].density > cands[j].density
+		})
+	}
 
 	var b strings.Builder
 	used := 0
 	for _, c := range cands {
 		if used+c.tok > tokenBudget && used > 0 {
+			reason := fmt.Sprintf("budget-fit drop density=%.4f", c.density)
+			if rankOrderOnly {
+				reason = "rank-order budget drop"
+			}
 			fitAudit = append(fitAudit, AuditEntry{
-				ID: c.e.ID, Action: "exclude",
-				Reason: fmt.Sprintf("budget-fit drop density=%.4f", c.density),
-				Score:  c.score,
+				ID: c.e.ID, Action: "exclude", Reason: reason, Score: c.score,
 			})
 			continue
 		}
 		b.WriteString(c.e.PackText() + "\n\n")
 		selected = append(selected, c.e.ID)
 		used += c.tok
+		includeReason := fmt.Sprintf("budget-fit keep density=%.4f score=%.2f", c.density, c.score)
+		if rankOrderOnly {
+			includeReason = fmt.Sprintf("rank-order keep score=%.2f", c.score)
+		}
 		fitAudit = append(fitAudit, AuditEntry{
-			ID: c.e.ID, Action: "include",
-			Reason: fmt.Sprintf("budget-fit keep density=%.4f score=%.2f", c.density, c.score),
-			Score:  c.score,
-		})
-		if used >= tokenBudget {
-			continue
-		}
-	}
-	return b.String(), selected, fitAudit
-}
-
-// budgetFitByRankOrder packs entities in rank order (first-fit), without density reordering.
-func budgetFitByRankOrder(ranked []scoredEnt, tokenBudget int) (packed string, selected []string, fitAudit []AuditEntry) {
-	var b strings.Builder
-	used := 0
-	for _, r := range ranked {
-		tok := tokens.Estimate(r.e.PackText() + "\n\n")
-		if tok <= 0 {
-			tok = 1
-		}
-		if used+tok > tokenBudget && used > 0 {
-			fitAudit = append(fitAudit, AuditEntry{
-				ID: r.e.ID, Action: "exclude",
-				Reason: "rank-order budget drop (no density fit)",
-				Score:  r.score,
-			})
-			continue
-		}
-		b.WriteString(r.e.PackText() + "\n\n")
-		selected = append(selected, r.e.ID)
-		used += tok
-		fitAudit = append(fitAudit, AuditEntry{
-			ID: r.e.ID, Action: "include",
-			Reason: fmt.Sprintf("rank-order keep score=%.2f", r.score),
-			Score:  r.score,
+			ID: c.e.ID, Action: "include", Reason: includeReason, Score: c.score,
 		})
 		if used >= tokenBudget {
 			continue

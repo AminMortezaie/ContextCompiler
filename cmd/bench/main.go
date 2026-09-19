@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aminmortezaie/contextcompiler/internal/arms"
+	"github.com/aminmortezaie/contextcompiler/internal/compiler"
 	"github.com/aminmortezaie/contextcompiler/internal/embed"
 	"github.com/aminmortezaie/contextcompiler/internal/eval"
 	"github.com/aminmortezaie/contextcompiler/internal/fixture"
@@ -27,6 +28,8 @@ func main() {
 	small := flag.Bool("small", false, "use Day-0 tiny fixture instead of scaled org")
 	topK := flag.Int("topk", 16, "RAG top-k for arm B")
 	useMock := flag.Bool("mock", false, "force mock LLM even if API key is set")
+	suite := flag.Bool("suite", false, "run Phase 3 multi-task suite over Day-0 narrative tasks")
+	ablations := flag.Bool("ablations", false, "with -suite, add single-knob C:compiler-no-* ablation arms")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -42,10 +45,8 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "LLM client: %s\n", client.Name())
 
-	var (
-		st   *state.Store
-		task fixture.Task
-	)
+	var st *state.Store
+	var task fixture.Task
 	if *small {
 		st, task = fixture.Day0()
 	} else {
@@ -80,15 +81,45 @@ func main() {
 	n, _ := vs.Count(ctx)
 	fmt.Fprintf(os.Stderr, "Indexed %d entities in %s\n", n, time.Since(indexStart).Round(time.Millisecond))
 
+	armList := []arms.Arm{
+		arms.NewArmA(client),
+		arms.NewArmB(client, emb, vs, *topK),
+		arms.NewArmC(client),
+	}
+	if *ablations {
+		armList = append(armList,
+			arms.NewArmCAblation(client, compiler.Ablation{NoTaskContract: true}),
+			arms.NewArmCAblation(client, compiler.Ablation{NoRanking: true}),
+			arms.NewArmCAblation(client, compiler.Ablation{NoBudgetFit: true}),
+			arms.NewArmCAblation(client, compiler.Ablation{NoAudit: true}),
+			arms.NewArmCAblation(client, compiler.Ablation{NoRefExpansion: true}),
+		)
+	}
+
+	fmt.Fprintf(os.Stderr, "Running with shared LLM packing budget=%d (corpus est_tokens=%d)\n\n", *budget, est)
+
+	if *suite {
+		sh := &eval.SuiteHarness{
+			Store:       st,
+			Tasks:       fixture.Day0TaskSuite(),
+			Arms:        armList,
+			TokenBudget: *budget,
+			Out:         os.Stdout,
+		}
+		if _, err := sh.RunAll(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "suite failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	h := &eval.Harness{
 		Store:       st,
 		Task:        task,
-		Arms:        []arms.Arm{arms.NewArmA(client), arms.NewArmB(client, emb, vs, *topK), arms.NewArmC(client)},
+		Arms:        armList,
 		TokenBudget: *budget,
 		Out:         os.Stdout,
 	}
-
-	fmt.Fprintf(os.Stderr, "Running A/B/C: corpus est_tokens=%d, shared LLM packing budget=%d (A/B/C equivalent)\n\n", est, *budget)
 	if _, err := h.RunAll(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "bench failed: %v\n", err)
 		os.Exit(1)

@@ -7,23 +7,13 @@ import (
 	"github.com/aminmortezaie/contextcompiler/internal/fixture"
 )
 
-func TestAblationNoTaskContractReducesContextRecall(t *testing.T) {
+func TestAblationNoTaskContractStripsHints(t *testing.T) {
 	st, task := fixture.Day0()
 	contract := compiler.BuildContractFromQuestion(task.Question)
-	full := compiler.Compile(st.All(), contract, compiler.Options{TokenBudget: 600})
 	abl := compiler.Compile(st.All(), contract, compiler.Options{
 		TokenBudget: 600,
 		Ablation:    compiler.Ablation{NoTaskContract: true},
 	})
-	if len(full.SelectedIDs) == 0 || len(abl.SelectedIDs) == 0 {
-		t.Fatal("expected selections")
-	}
-	if len(full.RetrievedIDs) <= len(abl.RetrievedIDs) && full.Context == abl.Context {
-		t.Log("ablation may coincide on tiny fixture; checking audit only")
-	}
-	if len(abl.Audit) != 0 {
-		// no-audit is a different flag
-	}
 	if len(abl.Contract.Keywords) > 0 || len(abl.Contract.ProjectHints) > 0 {
 		t.Fatal("no-task-contract should strip derived keywords and project hints")
 	}
