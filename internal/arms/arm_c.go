@@ -142,23 +142,8 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[s
 
 	for _, e := range entities {
 		if e.Meta != nil && e.Meta["noise"] == "true" {
-			// Synthetic dilution rows: fixed kind/noise scoring only (body never matches golden keywords).
-			score := kindPrior[e.Kind]
-			reasons := []string{"noise-penalty"}
-			if !kindSet[string(e.Kind)] {
-				score *= 0.15
-				reasons = append(reasons, "kind-not-required")
-			} else {
-				reasons = append(reasons, "kind-prior")
-			}
-			score *= 0.05
-			if score < 1.0 {
-				noiseExcluded++
-				continue
-			}
-			reason := strings.Join(reasons, ",")
-			ranked = append(ranked, scoredEnt{e: e, score: score, reason: reason})
-			scoreByID[e.ID] = score
+			// Synthetic dilution: max kind prior 5×0.05=0.25, always below rank threshold.
+			noiseExcluded++
 			continue
 		}
 
@@ -175,7 +160,7 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[s
 		titleLower := strings.ToLower(e.Title)
 		kwHits := 0
 		for _, kw := range c.Keywords {
-			if containsFold(titleLower, kw) || containsFoldInText(e.Text, kw) {
+			if strings.Contains(titleLower, kw) || containsFold(e.Text, kw) {
 				kwHits++
 				score += 3.0
 			}
@@ -185,7 +170,7 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[s
 		}
 
 		for _, ph := range c.ProjectHints {
-			if containsFold(titleLower, ph) || containsFoldInText(e.Text, ph) ||
+			if strings.Contains(titleLower, ph) || containsFold(e.Text, ph) ||
 				strings.Contains(strings.ToLower(e.ID), strings.ReplaceAll(ph, " ", "-")) {
 				score += 4.0
 				reasons = append(reasons, "project-hint")
@@ -229,48 +214,16 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[s
 	return ranked, below, noiseExcluded
 }
 
-// containsFold reports whether substr (already lower-case) appears in s with ASCII case folding.
 func containsFold(s, substr string) bool {
 	if substr == "" {
 		return true
 	}
 	for i := 0; i <= len(s)-len(substr); i++ {
-		if equalFoldASCII(s[i:i+len(substr)], substr) {
+		if strings.EqualFold(s[i:i+len(substr)], substr) {
 			return true
 		}
 	}
 	return false
-}
-
-func containsFoldInText(text, substr string) bool {
-	if substr == "" {
-		return true
-	}
-	for i := 0; i <= len(text)-len(substr); i++ {
-		if equalFoldASCII(text[i:i+len(substr)], substr) {
-			return true
-		}
-	}
-	return false
-}
-
-func equalFoldASCII(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		ca, cb := a[i], b[i]
-		if ca >= 'A' && ca <= 'Z' {
-			ca += 'a' - 'A'
-		}
-		if cb >= 'A' && cb <= 'Z' {
-			cb += 'a' - 'A'
-		}
-		if ca != cb {
-			return false
-		}
-	}
-	return true
 }
 
 func budgetFitByDensity(ranked []scoredEnt, tokenBudget int) (packed string, selected []string, fitAudit []AuditEntry) {
