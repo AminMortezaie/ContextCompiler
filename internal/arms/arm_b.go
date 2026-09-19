@@ -15,7 +15,7 @@ import (
 	"github.com/aminmortezaie/contextcompiler/internal/tokens"
 )
 
-// ArmB is RAG: embed query → vector top-k → pack → LLM.
+// ArmB is RAG: embed query → vector top-k → pack to the same tokenBudget as A/C → LLM.
 // When VectorStore is nil, falls back to in-memory keyword top-k (unit-test safe).
 // Indexing is done once outside the arm (bench harness); compile phase here is
 // query-embed + search + pack only.

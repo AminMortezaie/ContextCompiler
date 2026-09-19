@@ -10,7 +10,8 @@ import (
 	"github.com/aminmortezaie/contextcompiler/internal/state"
 )
 
-// ArmA is full-dump → LLM: concatenate state texts until token budget.
+// ArmA is the naïve baseline: the full org-state corpus is the candidate pool;
+// entities are concatenated in store order until the shared tokenBudget (same cap as B/C), then LLM.
 type ArmA struct {
 	LLM llm.Client
 }
@@ -49,6 +50,6 @@ func (a *ArmA) Run(ctx context.Context, store *state.Store, task fixture.Task, t
 		CompileLatency: compileDur,
 		LLMLatency:     llmDur,
 		IsStub:         false,
-		Notes:          "full in-memory dump until budget",
+		Notes:          "full corpus candidates; insertion-order pack to shared budget",
 	}, nil
 }
