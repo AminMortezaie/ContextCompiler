@@ -30,6 +30,9 @@ func BuildContractFromQuestion(question string) TaskContract {
 	for _, kw := range []string{
 		"project x", "delay", "delayed", "decision", "backend", "ticket",
 		"auth", "api redesign", "freeze", "sso", "scope creep",
+		"schedule slip", "slip", "caused", "cause", "approved", "approval",
+		"decision id", "owns", "owner", "ownership", "responsible", "implementing",
+		"prioritized", "action", "right now",
 	} {
 		if strings.Contains(q, kw) {
 			keywords = append(keywords, kw)

@@ -11,6 +11,7 @@ import (
 // Metrics are the scored outputs printed for every run.
 type Metrics struct {
 	ArmName              string
+	TaskID               string
 	TaskSuccess          bool
 	InputTokens          int
 	OutputTokens         int
@@ -20,9 +21,11 @@ type Metrics struct {
 	CompileMS            int64   // select/rank/pack (+ retrieval for B)
 	LLMMS                int64   // LLM Generate wall ms
 	OverheadPctOfE2ELat  float64 // compile_ms / total_ms * 100
-	RelevantStateRecall  float64 // |selected ∩ relevant| / |relevant|
+	RetrievalRecall      float64 // |retrieved ∩ relevant| / |relevant|
+	ContextRecall        float64 // |packed selected ∩ relevant| / |relevant|
 	IrrelevantStateRatio float64 // |selected − relevant| / |selected|
 	SelectedCount        int
+	RetrievalHitCount    int
 	RelevantHitCount     int
 	IsStub               bool
 	Notes                string
@@ -38,20 +41,18 @@ func Score(res arms.RunResult, task fixture.Task) Metrics {
 		relSet[id] = struct{}{}
 	}
 
-	hit := 0
+	retrievalHit := countHits(res.RetrievedIDs, relSet)
+	contextHit := countHits(res.SelectedIDs, relSet)
+
 	irrelevant := 0
 	for _, id := range res.SelectedIDs {
-		if _, ok := relSet[id]; ok {
-			hit++
-		} else {
+		if _, ok := relSet[id]; !ok {
 			irrelevant++
 		}
 	}
 
-	recall := 0.0
-	if len(task.RelevantIDs) > 0 {
-		recall = float64(hit) / float64(len(task.RelevantIDs))
-	}
+	retrievalRecall := recallFraction(retrievalHit, len(task.RelevantIDs))
+	contextRecall := recallFraction(contextHit, len(task.RelevantIDs))
 	irrRatio := 0.0
 	if len(res.SelectedIDs) > 0 {
 		irrRatio = float64(irrelevant) / float64(len(res.SelectedIDs))
@@ -74,6 +75,7 @@ func Score(res arms.RunResult, task fixture.Task) Metrics {
 
 	return Metrics{
 		ArmName:              res.ArmName,
+		TaskID:               task.ID,
 		TaskSuccess:          success,
 		InputTokens:          res.InputTokens,
 		OutputTokens:         res.OutputTokens,
@@ -83,14 +85,33 @@ func Score(res arms.RunResult, task fixture.Task) Metrics {
 		CompileMS:            compileMS,
 		LLMMS:                llmMS,
 		OverheadPctOfE2ELat:  overheadLatPct,
-		RelevantStateRecall:  recall,
+		RetrievalRecall:      retrievalRecall,
+		ContextRecall:        contextRecall,
 		IrrelevantStateRatio: irrRatio,
 		SelectedCount:        len(res.SelectedIDs),
-		RelevantHitCount:     hit,
+		RetrievalHitCount:    retrievalHit,
+		RelevantHitCount:     contextHit,
 		IsStub:               res.IsStub,
 		Notes:                res.Notes,
 		AnswerPreview:        preview,
 	}
+}
+
+func countHits(ids []string, golden map[string]struct{}) int {
+	hit := 0
+	for _, id := range ids {
+		if _, ok := golden[id]; ok {
+			hit++
+		}
+	}
+	return hit
+}
+
+func recallFraction(hit, goldenN int) float64 {
+	if goldenN <= 0 {
+		return 0
+	}
+	return float64(hit) / float64(goldenN)
 }
 
 func taskSuccess(answer string, required []string) bool {

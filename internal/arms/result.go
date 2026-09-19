@@ -16,7 +16,8 @@ type RunResult struct {
 
 	// Packed context and selection
 	PackedContext string
-	SelectedIDs   []string
+	RetrievedIDs  []string // candidates after retrieval/rank, before budget-fit packing
+	SelectedIDs   []string // entity IDs present in PackedContext
 	ExcludedIDs   []string
 	AuditJSON     string // arm C include/exclude audit; empty for A/B
 

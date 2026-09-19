@@ -18,18 +18,20 @@ type BudgetUsage struct {
 
 // Result is the output of a compile pass (no LLM).
 type Result struct {
-	Contract    TaskContract `json:"contract"`
-	Context     string       `json:"compiled_context"`
-	SelectedIDs []string     `json:"selected_ids"`
-	ExcludedIDs []string     `json:"excluded_ids"`
-	Audit       []AuditEntry `json:"audit"`
-	Budget      BudgetUsage  `json:"budget_usage"`
+	Contract      TaskContract `json:"contract"`
+	Context       string       `json:"compiled_context"`
+	RetrievedIDs  []string     `json:"retrieved_ids,omitempty"` // ranked candidates before budget-fit
+	SelectedIDs   []string     `json:"selected_ids"`
+	ExcludedIDs   []string     `json:"excluded_ids"`
+	Audit         []AuditEntry `json:"audit"`
+	Budget        BudgetUsage  `json:"budget_usage"`
 }
 
-// Options configures compile, budget, and permission hooks.
+// Options configures compile, budget, permission hooks, and ablation toggles.
 type Options struct {
 	TokenBudget int
 	Permissions permissions.Policy
+	Ablation    Ablation
 }
 
 // Compile ranks and packs entities for a task contract with audit and budget enforcement.
@@ -39,14 +41,25 @@ func Compile(entities []state.Entity, contract TaskContract, opts Options) Resul
 		opts.TokenBudget = 2000
 	}
 
-	allowed, permDenials := permissions.Filter(entities, opts.Permissions)
-	ranked, below, noiseExcluded := rankByContract(allowed, contract)
+	contract = applyAblationContract(contract, opts.Ablation)
 
-	packed, selected, fitAudit := budgetFitByDensity(ranked, opts.TokenBudget)
+	allowed, permDenials := permissions.Filter(entities, opts.Permissions)
+	ranked, below, noiseExcluded := rankByContract(allowed, contract, opts.Ablation)
+
+	retrieved := make([]string, 0, len(ranked))
+	for _, r := range ranked {
+		retrieved = append(retrieved, r.e.ID)
+	}
+
+	packed, selected, fitAudit := budgetFit(ranked, opts.TokenBudget, opts.Ablation.NoBudgetFit)
 	excluded := compilerExcludedIDs(allowed, selected)
-	audit := buildAudit(selected, below, fitAudit, noiseExcluded)
-	for _, d := range permDenials {
-		audit = append([]AuditEntry{{ID: d.ID, Action: "exclude", Reason: d.Reason}}, audit...)
+
+	var audit []AuditEntry
+	if !opts.Ablation.NoAudit {
+		audit = buildAudit(selected, below, fitAudit, noiseExcluded)
+		for _, d := range permDenials {
+			audit = append([]AuditEntry{{ID: d.ID, Action: "exclude", Reason: d.Reason}}, audit...)
+		}
 	}
 
 	tokensUsed := tokens.Estimate(packed)
@@ -55,11 +68,12 @@ func Compile(entities []state.Entity, contract TaskContract, opts Options) Resul
 	}
 
 	return Result{
-		Contract:    contract,
-		Context:     packed,
-		SelectedIDs: selected,
-		ExcludedIDs: excluded,
-		Audit:       audit,
+		Contract:     contract,
+		Context:      packed,
+		RetrievedIDs: retrieved,
+		SelectedIDs:  selected,
+		ExcludedIDs:  excluded,
+		Audit:        audit,
 		Budget: BudgetUsage{
 			TokenBudget: opts.TokenBudget,
 			TokensUsed:  tokensUsed,
@@ -73,7 +87,17 @@ type scoredEnt struct {
 	reason string
 }
 
-func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[string]string, int) {
+func rankByContract(entities []state.Entity, c TaskContract, ab Ablation) ([]scoredEnt, map[string]string, int) {
+	if ab.NoRanking {
+		var ranked []scoredEnt
+		for _, e := range entities {
+			if e.Meta != nil && e.Meta["noise"] == "true" {
+				continue
+			}
+			ranked = append(ranked, scoredEnt{e: e, score: 1.0, reason: "ablation-no-ranking"})
+		}
+		return ranked, map[string]string{}, 0
+	}
 	kindSet := make(map[string]bool)
 	for _, k := range c.RequiredKinds {
 		kindSet[k] = true
@@ -142,22 +166,24 @@ func rankByContract(entities []state.Entity, c TaskContract) ([]scoredEnt, map[s
 		scoreByID[e.ID] = score
 	}
 
-	for i := range ranked {
-		boost := 0.0
-		for _, ref := range ranked[i].e.RefIDs {
-			if s, ok := scoreByID[ref]; ok && s >= 5 {
-				boost += 1.5
+	if !ab.NoRefExpansion {
+		for i := range ranked {
+			boost := 0.0
+			for _, ref := range ranked[i].e.RefIDs {
+				if s, ok := scoreByID[ref]; ok && s >= 5 {
+					boost += 1.5
+				}
 			}
-		}
-		for _, ref := range ranked[i].e.RefIDs {
-			if ref == "proj-x" || ref == "dec-001" || ref == "tkt-042" {
-				boost += 2.0
+			for _, ref := range ranked[i].e.RefIDs {
+				if ref == "proj-x" || ref == "dec-001" || ref == "tkt-042" {
+					boost += 2.0
+				}
 			}
-		}
-		if boost > 0 {
-			ranked[i].score += boost
-			ranked[i].reason += fmt.Sprintf(",ref-boost=%.1f", boost)
-			scoreByID[ranked[i].e.ID] = ranked[i].score
+			if boost > 0 {
+				ranked[i].score += boost
+				ranked[i].reason += fmt.Sprintf(",ref-boost=%.1f", boost)
+				scoreByID[ranked[i].e.ID] = ranked[i].score
+			}
 		}
 	}
 
@@ -182,7 +208,7 @@ func containsFold(s, substr string) bool {
 	return false
 }
 
-func budgetFitByDensity(ranked []scoredEnt, tokenBudget int) (packed string, selected []string, fitAudit []AuditEntry) {
+func budgetFit(ranked []scoredEnt, tokenBudget int, rankOrderOnly bool) (packed string, selected []string, fitAudit []AuditEntry) {
 	type cand struct {
 		scoredEnt
 		tok     int
@@ -196,31 +222,37 @@ func budgetFitByDensity(ranked []scoredEnt, tokenBudget int) (packed string, sel
 		}
 		cands = append(cands, cand{scoredEnt: r, tok: tok, density: r.score / float64(tok)})
 	}
-	sort.Slice(cands, func(i, j int) bool {
-		if cands[i].density == cands[j].density {
-			return cands[i].score > cands[j].score
-		}
-		return cands[i].density > cands[j].density
-	})
+	if !rankOrderOnly {
+		sort.Slice(cands, func(i, j int) bool {
+			if cands[i].density == cands[j].density {
+				return cands[i].score > cands[j].score
+			}
+			return cands[i].density > cands[j].density
+		})
+	}
 
 	var b strings.Builder
 	used := 0
 	for _, c := range cands {
 		if used+c.tok > tokenBudget && used > 0 {
+			reason := fmt.Sprintf("budget-fit drop density=%.4f", c.density)
+			if rankOrderOnly {
+				reason = "rank-order budget drop"
+			}
 			fitAudit = append(fitAudit, AuditEntry{
-				ID: c.e.ID, Action: "exclude",
-				Reason: fmt.Sprintf("budget-fit drop density=%.4f", c.density),
-				Score:  c.score,
+				ID: c.e.ID, Action: "exclude", Reason: reason, Score: c.score,
 			})
 			continue
 		}
 		b.WriteString(c.e.PackText() + "\n\n")
 		selected = append(selected, c.e.ID)
 		used += c.tok
+		includeReason := fmt.Sprintf("budget-fit keep density=%.4f score=%.2f", c.density, c.score)
+		if rankOrderOnly {
+			includeReason = fmt.Sprintf("rank-order keep score=%.2f", c.score)
+		}
 		fitAudit = append(fitAudit, AuditEntry{
-			ID: c.e.ID, Action: "include",
-			Reason: fmt.Sprintf("budget-fit keep density=%.4f score=%.2f", c.density, c.score),
-			Score:  c.score,
+			ID: c.e.ID, Action: "include", Reason: includeReason, Score: c.score,
 		})
 		if used >= tokenBudget {
 			continue

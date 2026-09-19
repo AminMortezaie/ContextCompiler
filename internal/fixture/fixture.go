@@ -115,26 +115,7 @@ func Day0() (*state.Store, Task) {
 		},
 	}
 
-	task := Task{
-		ID:       "task-proj-x-delay",
-		Question: "Why was Project X delayed, who made the relevant decision, and what action should the backend team take?",
-		// Golden relevant IDs: core delay narrative entities.
-		RelevantIDs: []string{
-			"proj-x",
-			"dec-001",
-			"tkt-042",
-			"usr-sarah",
-			"usr-marcus",
-			"conv-standup",
-			"task-freeze",
-			"team-backend",
-		},
-		RequiredPhrases: []string{
-			"API redesign",
-			"Sarah Chen",
-			"backend",
-		},
-	}
+	task := projXDelayTask()
 
 	return state.NewStore(entities), task
 }
