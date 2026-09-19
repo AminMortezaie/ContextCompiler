@@ -8,6 +8,7 @@ import (
 	"github.com/aminmortezaie/contextcompiler/internal/fixture"
 	"github.com/aminmortezaie/contextcompiler/internal/llm"
 	"github.com/aminmortezaie/contextcompiler/internal/state"
+	"github.com/aminmortezaie/contextcompiler/internal/tokens"
 )
 
 // ArmA is the naïve baseline: the full org-state corpus is the candidate pool;
@@ -52,6 +53,7 @@ func (a *ArmA) Run(ctx context.Context, store *state.Store, task fixture.Task, t
 		CompileLatency: compileDur,
 		LLMLatency:     llmDur,
 		IsStub:         false,
+		PackedTokens:   tokens.Estimate(packed),
 		Notes:          "full corpus candidates; insertion-order pack to shared budget",
 	}, nil
 }

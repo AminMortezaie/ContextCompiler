@@ -106,6 +106,7 @@ func (a *ArmB) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 		CompileLatency: compileDur,
 		LLMLatency:     llmDur,
 		IsStub:         isStub,
+		PackedTokens:   tokens.Estimate(packed),
 		Notes:          notes,
 	}, nil
 }

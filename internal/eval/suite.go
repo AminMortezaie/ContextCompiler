@@ -71,6 +71,7 @@ func PrintSuiteRollup(w io.Writer, rows []Metrics) {
 		taskOK          int
 		retrievalRecall float64
 		contextRecall   float64
+		packedTokens    int
 	}
 	byArm := map[string]*acc{}
 	for _, m := range rows {
@@ -85,16 +86,18 @@ func PrintSuiteRollup(w io.Writer, rows []Metrics) {
 		}
 		a.retrievalRecall += m.RetrievalRecall
 		a.contextRecall += m.ContextRecall
+		a.packedTokens += m.PackedTokens
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ARM\tTASKS\tTASK_SUCCESS_RATE\tMEAN_RETR_RECALL\tMEAN_CTX_RECALL")
+	fmt.Fprintln(tw, "ARM\tTASKS\tTASK_SUCCESS_RATE\tMEAN_RETR_RECALL\tMEAN_CTX_RECALL\tMEAN_PACKED_TOKENS")
 	for arm, a := range byArm {
 		if a.n == 0 {
 			continue
 		}
-		fmt.Fprintf(tw, "%s\t%d\t%.3f\t%.3f\t%.3f\n",
+		fmt.Fprintf(tw, "%s\t%d\t%.3f\t%.3f\t%.3f\t%.1f\n",
 			arm, a.n, float64(a.taskOK)/float64(a.n),
-			a.retrievalRecall/float64(a.n), a.contextRecall/float64(a.n))
+			a.retrievalRecall/float64(a.n), a.contextRecall/float64(a.n),
+			float64(a.packedTokens)/float64(a.n))
 	}
 	_ = tw.Flush()
 }

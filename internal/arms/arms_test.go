@@ -77,7 +77,7 @@ func TestArmCEmitsAudit(t *testing.T) {
 	}
 	var parsed struct {
 		Contract compiler.TaskContract `json:"contract"`
-		Audit    []compiler.AuditEntry   `json:"audit"`
+		Audit    []compiler.AuditEntry `json:"audit"`
 	}
 	if err := json.Unmarshal([]byte(res.AuditJSON), &parsed); err != nil {
 		t.Fatalf("audit JSON: %v", err)
