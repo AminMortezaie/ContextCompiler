@@ -1,4 +1,4 @@
-.PHONY: bench bench-small test tidy db-up db-down db-logs migrate api
+.PHONY: bench bench-small bench-multitask test tidy db-up db-down db-logs migrate api
 
 API_ADDR ?= :8080
 
@@ -11,6 +11,9 @@ bench:
 
 bench-small:
 	go run ./cmd/bench -small
+
+bench-multitask:
+	go run ./cmd/bench-multitask -small -mock -budget $(BUDGET)
 
 test:
 	go test ./...

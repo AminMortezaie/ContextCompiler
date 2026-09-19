@@ -65,7 +65,9 @@ func printRunDetail(w io.Writer, m Metrics, res arms.RunResult, goldenN int) {
 	fmt.Fprintf(w, "  compile_ms: %d\n", m.CompileMS)
 	fmt.Fprintf(w, "  llm_ms: %d\n", m.LLMMS)
 	fmt.Fprintf(w, "  overhead_pct_of_e2e_latency: %.2f%%\n", m.OverheadPctOfE2ELat)
-	fmt.Fprintf(w, "  relevant_state_recall: %.3f (%d/%d golden)\n", m.RelevantStateRecall, m.RelevantHitCount, goldenN)
+	fmt.Fprintf(w, "  retrieval_recall: %.3f (%d/%d golden)\n", m.RetrievalRecall, m.RetrievalHitCount, goldenN)
+	fmt.Fprintf(w, "  context_recall: %.3f (%d/%d golden)\n", m.ContextRecall, m.RelevantHitCount, goldenN)
+	fmt.Fprintf(w, "  relevant_state_recall: %.3f (alias for context_recall)\n", m.RelevantStateRecall)
 	fmt.Fprintf(w, "  irrelevant_state_ratio: %.3f\n", m.IrrelevantStateRatio)
 	fmt.Fprintf(w, "  selected: %d ids: %s\n", m.SelectedCount, strings.Join(res.SelectedIDs, ","))
 	fmt.Fprintf(w, "  notes: %s\n", m.Notes)
@@ -78,15 +80,16 @@ func printRunDetail(w io.Writer, m Metrics, res arms.RunResult, goldenN int) {
 // PrintTable writes the A vs B vs C comparison table with required metrics.
 func PrintTable(w io.Writer, rows []Metrics) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ARM\tSUCCESS\tTOKENS\tCOST_USD\tLAT_MS\tREL_RECALL\tIRR_RATIO\tSTUB")
+	fmt.Fprintln(tw, "ARM\tSUCCESS\tTOKENS\tCOST_USD\tLAT_MS\tRETR_RECALL\tCTX_RECALL\tIRR_RATIO\tSTUB")
 	for _, m := range rows {
-		fmt.Fprintf(tw, "%s\t%v\t%d\t$%.6f\t%d\t%.3f\t%.3f\t%v\n",
+		fmt.Fprintf(tw, "%s\t%v\t%d\t$%.6f\t%d\t%.3f\t%.3f\t%.3f\t%v\n",
 			m.ArmName,
 			m.TaskSuccess,
 			m.TotalTokens,
 			m.EstCostUSD,
 			m.LatencyMS,
-			m.RelevantStateRecall,
+			m.RetrievalRecall,
+			m.ContextRecall,
 			m.IrrelevantStateRatio,
 			m.IsStub,
 		)

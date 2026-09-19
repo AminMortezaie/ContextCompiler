@@ -16,18 +16,32 @@ import (
 // task-contract → multi-signal select/rank → budget-fit (score/token, same tokenBudget as A/B) → assemble + include/exclude audit → LLM.
 // Deliberately distinct from arm B (no vector search; contract + kind priors + ref-graph boost).
 type ArmC struct {
-	LLM llm.Client
+	LLM      llm.Client
+	Ablation compiler.Ablation
 }
 
 func NewArmC(client llm.Client) *ArmC { return &ArmC{LLM: client} }
 
-func (a *ArmC) Name() string { return "C:compiler" }
+// NewArmCAblation constructs arm C with a single-knob ablation for science-track runs.
+func NewArmCAblation(client llm.Client, ab compiler.Ablation) *ArmC {
+	return &ArmC{LLM: client, Ablation: ab}
+}
+
+func (a *ArmC) Name() string {
+	if lbl := a.Ablation.Label(); lbl != "" {
+		return "C:compiler-" + lbl
+	}
+	return "C:compiler"
+}
 
 func (a *ArmC) Run(ctx context.Context, st *state.Store, task fixture.Task, tokenBudget int) (RunResult, error) {
 	start := time.Now()
 
 	contract := compiler.BuildContractFromQuestion(task.Question)
-	compiled := compiler.Compile(st.All(), contract, compiler.Options{TokenBudget: tokenBudget})
+	compiled := compiler.Compile(st.All(), contract, compiler.Options{
+		TokenBudget: tokenBudget,
+		Ablation:    a.Ablation,
+	})
 
 	auditBytes, _ := json.Marshal(struct {
 		Contract compiler.TaskContract `json:"contract"`
@@ -48,6 +62,7 @@ func (a *ArmC) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 	return RunResult{
 		ArmName:        a.Name(),
 		PackedContext:  compiled.Context,
+		RetrievedIDs:   compiled.RetrievedIDs,
 		SelectedIDs:    compiled.SelectedIDs,
 		ExcludedIDs:    compiled.ExcludedIDs,
 		AuditJSON:      string(auditBytes),

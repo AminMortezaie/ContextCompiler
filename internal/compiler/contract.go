@@ -30,6 +30,9 @@ func BuildContractFromQuestion(question string) TaskContract {
 	for _, kw := range []string{
 		"project x", "delay", "delayed", "decision", "backend", "ticket",
 		"auth", "api redesign", "freeze", "sso", "scope creep",
+		"schedule slip", "slip", "caused", "cause", "approved", "approval",
+		"decision id", "owns", "owner", "ownership", "responsible", "implementing",
+		"prioritized", "action", "right now",
 	} {
 		if strings.Contains(q, kw) {
 			keywords = append(keywords, kw)
@@ -39,12 +42,36 @@ func BuildContractFromQuestion(question string) TaskContract {
 	if strings.Contains(q, "project x") {
 		projects = append(projects, "project x", "proj-x")
 	}
+	kinds := append([]string(nil), defaultKinds...)
+	if strings.Contains(q, "who") || strings.Contains(q, "owner") || strings.Contains(q, "responsible") {
+		kinds = appendUniqueKind(kinds, "user", "team")
+	}
+	if strings.Contains(q, "decision") || strings.Contains(q, "approved") {
+		kinds = appendUniqueKind(kinds, "decision")
+	}
+	if strings.Contains(q, "action") || strings.Contains(q, "freeze") || strings.Contains(q, "ticket") {
+		kinds = appendUniqueKind(kinds, "ticket", "task")
+	}
 	return TaskContract{
 		Question:      question,
 		ProjectHints:  projects,
-		RequiredKinds: append([]string(nil), defaultKinds...),
+		RequiredKinds: kinds,
 		Keywords:      keywords,
 	}
+}
+
+func appendUniqueKind(kinds []string, add ...string) []string {
+	seen := make(map[string]bool, len(kinds))
+	for _, k := range kinds {
+		seen[k] = true
+	}
+	for _, k := range add {
+		if !seen[k] {
+			kinds = append(kinds, k)
+			seen[k] = true
+		}
+	}
+	return kinds
 }
 
 // Normalize fills in a contract when optional fields are omitted.

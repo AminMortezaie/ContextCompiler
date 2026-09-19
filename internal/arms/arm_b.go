@@ -74,6 +74,10 @@ func (a *ArmB) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 		isStub = true
 	}
 
+	retrieved := make([]string, 0, len(ranked))
+	for _, e := range ranked {
+		retrieved = append(retrieved, e.ID)
+	}
 	packed, selected := packByShortestFirst(ranked, tokenBudget)
 	excluded := ExcludedFrom(st.IDs(), selected)
 	compileDur := time.Since(start)
@@ -91,6 +95,7 @@ func (a *ArmB) Run(ctx context.Context, st *state.Store, task fixture.Task, toke
 	return RunResult{
 		ArmName:        a.Name(),
 		PackedContext:  packed,
+		RetrievedIDs:   retrieved,
 		SelectedIDs:    selected,
 		ExcludedIDs:    excluded,
 		Answer:         resp.Text,

@@ -37,6 +37,34 @@ Health check: `GET /healthz`.
 
 ---
 
+## Phase 3 — Multi-task science track
+
+Deterministic **narrative task suite** over the same Day-0 Project X org state (causal, decision, ownership, action, plus the original composite delay task). Each task carries golden **relevant entity IDs** and **required answer phrases**.
+
+### Split metrics (every arm, every task)
+
+| Metric | Meaning |
+|--------|---------|
+| **retrieval_recall** | \|retrieved candidate IDs ∩ golden relevant\| / \|golden relevant\| — after retrieval/ranking, **before** budget-fit packing |
+| **context_recall** | \|packed context entity IDs ∩ golden relevant\| / \|golden relevant\| — what actually reached the LLM |
+| **task_success** | Mock/live answer contains all `RequiredPhrases` for that task |
+
+Retrieval and context recall can diverge when budget-fit drops high-recall entities (especially Arm B/C).
+
+### Run multi-task bench (mock, no API keys)
+
+```bash
+go test ./...
+make bench-multitask
+# or:
+go run ./cmd/bench-multitask -small -mock -budget 2000
+go run ./cmd/bench-multitask -small -mock -ablations   # adds C:compiler-no-* single-knob ablations
+```
+
+Phase 1 `make bench` and Phase 2 `make api` / `/v1/compile` are unchanged. Compiler **ablation knobs** live in `internal/compiler.Ablation` and are exercised via `arms.NewArmCAblation` in the multi-task bench only (production compile API stays full pipeline).
+
+---
+
 ## Phase 1 — Experiment harness
 
 ## Experimental question
@@ -142,7 +170,7 @@ All three call the LLM with a context pack capped at `-budget` (default 2000 tok
 
 ## Eval harness
 
-Every run prints task success, token/cost estimates, latency, **compile_ms vs llm_ms**, **overhead_pct_of_e2e_latency**, recall, and irrelevant ratio. Indexing for Arm B runs once in the bench harness before arms and is not counted in per-arm `compile_ms`.
+Every run prints **task_success**, **retrieval_recall**, **context_recall** (plus the Phase 1 `relevant_state_recall` alias), token/cost estimates, latency, **compile_ms vs llm_ms**, **overhead_pct_of_e2e_latency**, and irrelevant ratio. Indexing for Arm B runs once in the bench harness before arms and is not counted in per-arm `compile_ms`.
 
 Compile is local Go (no LLM spend); latency overhead is the measurable proxy for the “compile overhead” experiment criterion.
 
@@ -165,6 +193,7 @@ Compile is local Go (no LLM spend); latency overhead is the measurable proxy for
 ```
   cmd/api/              # Phase 2 HTTP entrypoint
   cmd/bench/
+  cmd/bench-multitask/  # Phase 3 multi-task suite + ablations
   internal/api/
   internal/compiler/    # task-contract compile + audit (shared with arm C)
   internal/memory/    # pluggable org-state handles (v0 in-memory)

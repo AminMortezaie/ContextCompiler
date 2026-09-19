@@ -67,6 +67,7 @@ func TestScoreRecall(t *testing.T) {
 	}
 	res := arms.RunResult{
 		ArmName:      "test",
+		RetrievedIDs: []string{"a", "b", "c", "z"},
 		SelectedIDs:  []string{"a", "x", "b"},
 		Answer:       "ok",
 		InputTokens:  10,
@@ -77,8 +78,14 @@ func TestScoreRecall(t *testing.T) {
 	if !m.TaskSuccess {
 		t.Fatal("expected success")
 	}
-	if m.RelevantStateRecall < 0.66 || m.RelevantStateRecall > 0.67 {
-		t.Fatalf("recall=%v want ~0.666", m.RelevantStateRecall)
+	if m.RetrievalRecall < 0.99 {
+		t.Fatalf("retrieval recall=%v want 1.0", m.RetrievalRecall)
+	}
+	if m.ContextRecall < 0.66 || m.ContextRecall > 0.67 {
+		t.Fatalf("context recall=%v want ~0.666", m.ContextRecall)
+	}
+	if m.RelevantStateRecall != m.ContextRecall {
+		t.Fatal("RelevantStateRecall should alias ContextRecall")
 	}
 	if m.IrrelevantStateRatio < 0.33 || m.IrrelevantStateRatio > 0.34 {
 		t.Fatalf("irr=%v want ~0.333", m.IrrelevantStateRatio)
